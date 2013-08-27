@@ -1,0 +1,950 @@
+# Word Filter - system for the control of incorrect messages. 
+# Version 0.75
+# https://github.com/rescr1pt/tc_addons
+
+ sql/tc_addons/word_filter.sql | 66 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 66 insertions(+)
+
+diff --git a/sql/tc_addons/word_filter.sql b/sql/tc_addons/word_filter.sql
+new file mode 100644
+index 0000000..49382af
+--- /dev/null
++++ b/sql/tc_addons/word_filter.sql
+@@ -0,0 +1,66 @@
++-- ----------------------------
++-- Table structure for `letter_analogs`
++-- ----------------------------
++CREATE TABLE IF NOT EXISTS `letter_analogs` (
++  `letter` varchar(1) NOT NULL DEFAULT '',
++  `analogs` varchar(128) DEFAULT '',
++  PRIMARY KEY (`letter`)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8 MAX_ROWS=26;
++
++-- ----------------------------
++-- Records of letter_analogs
++-- ----------------------------
++DELETE FROM `letter_analogs` WHERE `letter` >= 'a' AND `letter` <= 'z';
++INSERT INTO `letter_analogs` VALUES 
++('a', 'а@'),
++('b', 'бьв'),
++('c', 'с'),
++('d', 'д'),
++('e', 'её'),
++('f', 'ф'),
++('g', 'г'),
++('h', 'хн'),
++('i', 'ий'),
++('j', 'яж'),
++('k', 'к'),
++('l', 'л'),
++('m', 'м'),
++('n', 'н'),
++('o', 'о0'),
++('p', 'пр'),
++('q', 'к'),
++('r', 'рг'),
++('s', 'с$'),
++('t', 'т'),
++('u', 'ую'),
++('v', 'в'),
++('w', 'вшщ'),
++('x', 'х'),
++('y', 'иу'),
++('z', 'з3');
++
++-- ----------------------------
++-- Table structure for `bad_word`
++-- ----------------------------
++DROP TABLE IF EXISTS `bad_word`;
++CREATE TABLE `bad_word` (
++  `bad_word` varchar(32) NOT NULL DEFAULT '',
++  PRIMARY KEY (`bad_word`)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='Bad word';
++
++-- ----------------------------
++-- Records of bad_word
++-- ----------------------------
++
++DELETE FROM `trinity_string` WHERE `entry` BETWEEN 20000 AND 20001;
++INSERT INTO `trinity_string` VALUES (20000, 'Your message wasn\'t sent, because in it there is a word \'%s\'.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Сообщение не было отправлено, потому что в нём найдено запрещённое слово \'%s\'.');
++INSERT INTO `trinity_string` VALUES (20001, 'Your mail wasn\'t sent, because in it there is a word \'%s', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Почта не было отправлено, потому что в нём найдено запрещённое слово \'%s\'.');
++
++DELETE FROM `command` WHERE `name` IN ('wordfilter badword add', 'wordfilter badword remove', 'wordfilter badword list', 'wordfilter mod');
++INSERT INTO `command` VALUES 
++('reload bad_word', 3, 'Syntax: .reload bad_word\nReload bad_word table.'),
++('reload letter_analogs', 3, 'Syntax: .reload letter_analogs\nReload letter_analogs table.'),
++('wordfilter badword add', 3, 'Syntax: .wordfilter badword add #word'),
++('wordfilter badword remove', 3, 'Syntax: .wordfilter badword remove #word'),
++('wordfilter badword list', 3, 'Syntax: .wordfilter badword list'),
++('wordfilter mod', 3, 'Syntax: .wordfilter mod on/off');
+ src/server/game/Entities/Player/Player.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/server/game/Entities/Player/Player.h b/src/server/game/Entities/Player/Player.h
+index 6cc8c0c..b917889 100644
+--- a/src/server/game/Entities/Player/Player.h
++++ b/src/server/game/Entities/Player/Player.h
+@@ -2294,6 +2294,8 @@ class Player : public Unit, public GridObject<Player>
+         std::string GetMapAreaAndZoneString();
+         std::string GetCoordsMapAreaAndZoneString();
+ 
++        std::string m_sentMsgCache;
++
+     protected:
+         // Gamemaster whisper whitelist
+         WhisperListContainer WhisperList;
+ src/server/game/Globals/ObjectMgr.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/server/game/Globals/ObjectMgr.cpp b/src/server/game/Globals/ObjectMgr.cpp
+index 4d6eab4..0d0510d 100644
+--- a/src/server/game/Globals/ObjectMgr.cpp
++++ b/src/server/game/Globals/ObjectMgr.cpp
+@@ -20,6 +20,7 @@
+ #include "AchievementMgr.h"
+ #include "ArenaTeam.h"
+ #include "ArenaTeamMgr.h"
++#include "WordFilterMgr.h"
+ #include "Chat.h"
+ #include "Common.h"
+ #include "DatabaseEnv.h"
+@@ -7416,6 +7417,9 @@ uint8 ObjectMgr::CheckPlayerName(const std::string& name, bool create)
+         if (wname[i] == wname[i-1] && wname[i] == wname[i-2])
+             return CHAR_NAME_THREE_CONSECUTIVE;
+ 
++    if(sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) && !sWordFilterMgr->FindBadWord(name).empty())
++        return CHAR_NAME_PROFANE;
++
+     return CHAR_NAME_SUCCESS;
+ }
+ 
+@@ -7454,6 +7458,9 @@ PetNameInvalidReason ObjectMgr::CheckPetName(const std::string& name)
+     if (!isValidString(wname, strictMask, false))
+         return PET_NAME_MIXED_LANGUAGES;
+ 
++    if(sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) && !sWordFilterMgr->FindBadWord(name).empty())
++        return PET_NAME_PROFANE;
++
+     return PET_NAME_SUCCESS;
+ }
+ 
+ src/server/game/Handlers/ChatHandler.cpp | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/src/server/game/Handlers/ChatHandler.cpp b/src/server/game/Handlers/ChatHandler.cpp
+index 4ebccc5..c7676c2 100644
+--- a/src/server/game/Handlers/ChatHandler.cpp
++++ b/src/server/game/Handlers/ChatHandler.cpp
+@@ -25,6 +25,7 @@
+ #include "WorldSession.h"
+ #include "DatabaseEnv.h"
+ #include "CellImpl.h"
++#include "WordFilterMgr.h"
+ #include "Chat.h"
+ #include "ChannelMgr.h"
+ #include "GridNotifiersImpl.h"
+@@ -234,6 +235,37 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
+                 return;
+             }
+         }
++ 
++         /// filtering of bad words  
++         if(sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE))
++         {
++             sender->m_sentMsgCache.append(msg);
++ 
++             // horizontally
++             std::string badWord = sWordFilterMgr->FindBadWord(msg);
++ 
++             // vertically
++             if(badWord.empty())
++                 badWord = sWordFilterMgr->FindBadWord(sender->m_sentMsgCache);
++ 
++             if (!badWord.empty())
++             {
++                 sender->m_sentMsgCache.erase();
++ 
++                 if(!sender->CanSpeak())
++                     return;
++ 				
++                 time_t muteTime = time(NULL) + (int64)(sWorld->getIntConfig(CONFIG_WORD_FILTER_MUTE_DURATION) / 1000);
++                 sender->GetSession()->m_muteTime = muteTime;
++                 ChatHandler(sender->GetSession()).PSendSysMessage(LANG_WORD_FILTER_FOUND_BAD_WORD_IN_CHAT, badWord.c_str());
++                 return; 
++             }
++ 
++             const uint8 maxSentMsgCacheSize = 64;
++ 
++             if(sender->m_sentMsgCache.size() >= maxSentMsgCacheSize)
++                 sender->m_sentMsgCache.erase();
++ 		}
+     }
+ 
+     switch (type)
+ src/server/game/Handlers/MailHandler.cpp | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/src/server/game/Handlers/MailHandler.cpp b/src/server/game/Handlers/MailHandler.cpp
+index 2bec62f..b3a64b3 100644
+--- a/src/server/game/Handlers/MailHandler.cpp
++++ b/src/server/game/Handlers/MailHandler.cpp
+@@ -25,6 +25,8 @@
+ #include "ObjectMgr.h"
+ #include "Player.h"
+ #include "Language.h"
++#include "WordFilterMgr.h"
++#include "Chat.h"
+ #include "DBCStores.h"
+ #include "Item.h"
+ #include "AccountMgr.h"
+@@ -76,6 +78,23 @@ void WorldSession::HandleSendMail(WorldPacket& recvData)
+         return;
+     }
+ 
++     // check msg to bad word
++     if (sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE))
++     {
++         std::string badWord = sWordFilterMgr->FindBadWord(subject);
++ 
++         if (badWord.empty())
++             badWord = sWordFilterMgr->FindBadWord(body);
++ 
++         if (!badWord.empty())
++         {
++             SendNotification(LANG_WORD_FILTER_FOUND_BAD_WORD_IN_MAIL, badWord.c_str());
++             // send packet
++             player->SendMailResult(0, MAIL_SEND, MAIL_ERR_MAIL_ATTACHMENT_INVALID); 
++             return;
++         }
++     }
++ 	
+     uint64 receiverGuid = 0;
+     if (normalizePlayerName(receiverName))
+         receiverGuid = sObjectMgr->GetPlayerGUIDByName(receiverName);
+ src/server/game/Handlers/PetitionsHandler.cpp | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/src/server/game/Handlers/PetitionsHandler.cpp b/src/server/game/Handlers/PetitionsHandler.cpp
+index 3b2a76a..dad15d9 100644
+--- a/src/server/game/Handlers/PetitionsHandler.cpp
++++ b/src/server/game/Handlers/PetitionsHandler.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include "Common.h"
+ #include "Language.h"
++#include "WordFilterMgr.h"
+ #include "WorldPacket.h"
+ #include "WorldSession.h"
+ #include "World.h"
+@@ -155,8 +156,9 @@ void WorldSession::HandlePetitionBuyOpcode(WorldPacket& recvData)
+             return;
+         }
+ 
+-        if (sObjectMgr->IsReservedName(name) || !ObjectMgr::IsValidCharterName(name))
+-        {
++        if (sObjectMgr->IsReservedName(name) || !ObjectMgr::IsValidCharterName(name)  ||
++            (sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) && !sWordFilterMgr->FindBadWord(name).empty()))
++		{
+             Guild::SendCommandResult(this, GUILD_COMMAND_CREATE, ERR_GUILD_NAME_INVALID, name);
+             return;
+         }
+@@ -168,7 +170,8 @@ void WorldSession::HandlePetitionBuyOpcode(WorldPacket& recvData)
+             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, name, "", ERR_ARENA_TEAM_NAME_EXISTS_S);
+             return;
+         }
+-        if (sObjectMgr->IsReservedName(name) || !ObjectMgr::IsValidCharterName(name))
++        if (sObjectMgr->IsReservedName(name) || !ObjectMgr::IsValidCharterName(name) || 
++			(sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) && !sWordFilterMgr->FindBadWord(name).empty()))
+         {
+             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, name, "", ERR_ARENA_TEAM_NAME_INVALID);
+             return;
+@@ -419,7 +422,8 @@ void WorldSession::HandlePetitionRenameOpcode(WorldPacket& recvData)
+             Guild::SendCommandResult(this, GUILD_COMMAND_CREATE, ERR_GUILD_NAME_EXISTS_S, newName);
+             return;
+         }
+-        if (sObjectMgr->IsReservedName(newName) || !ObjectMgr::IsValidCharterName(newName))
++        if (sObjectMgr->IsReservedName(newName) || !ObjectMgr::IsValidCharterName(newName) ||
++            (sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) && !sWordFilterMgr->FindBadWord(newName).empty()))
+         {
+             Guild::SendCommandResult(this, GUILD_COMMAND_CREATE, ERR_GUILD_NAME_INVALID, newName);
+             return;
+@@ -432,7 +436,8 @@ void WorldSession::HandlePetitionRenameOpcode(WorldPacket& recvData)
+             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, newName, "", ERR_ARENA_TEAM_NAME_EXISTS_S);
+             return;
+         }
+-        if (sObjectMgr->IsReservedName(newName) || !ObjectMgr::IsValidCharterName(newName))
++        if (sObjectMgr->IsReservedName(newName) || !ObjectMgr::IsValidCharterName(newName) ||
++			(sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) && !sWordFilterMgr->FindBadWord(newName).empty()))
+         {
+             SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, newName, "", ERR_ARENA_TEAM_NAME_INVALID);
+             return;
+ src/server/game/Miscellaneous/Language.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/server/game/Miscellaneous/Language.h b/src/server/game/Miscellaneous/Language.h
+index 772d5bc..8052e64 100644
+--- a/src/server/game/Miscellaneous/Language.h
++++ b/src/server/game/Miscellaneous/Language.h
+@@ -1217,6 +1217,10 @@ enum TrinityStrings
+     LANG_AUTO_BROADCAST                 = 11000,
+     LANG_INVALID_REALMID                = 11001,
+ 
++    // Word filter
++    LANG_WORD_FILTER_FOUND_BAD_WORD_IN_CHAT = 20000,
++    LANG_WORD_FILTER_FOUND_BAD_WORD_IN_MAIL = 20001,
++
+     // NOT RESERVED IDS                   12000-1999999999
+     // `db_script_string` table index     2000000000-2000009999 (MIN_DB_SCRIPT_STRING_ID-MAX_DB_SCRIPT_STRING_ID)
+     // For other tables maybe             2000010000-2147483647 (max index)
+ src/server/game/Tools/WordFilterMgr.cpp | 233 ++++++++++++++++++++++++++++++++
+ 1 file changed, 233 insertions(+)
+
+diff --git a/src/server/game/Tools/WordFilterMgr.cpp b/src/server/game/Tools/WordFilterMgr.cpp
+new file mode 100644
+index 0000000..f9a716e
+--- /dev/null
++++ b/src/server/game/Tools/WordFilterMgr.cpp
+@@ -0,0 +1,233 @@
++/*
++ * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation; either version 2 of the License, or (at your
++ * option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program. If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "WordFilterMgr.h"
++
++bool NormalizeWord(std::string& utf8String)
++{
++    // remove spaces
++    std::string::size_type n = 0;
++    while ((n = utf8String.find(' ', n)) != utf8String.npos)
++        utf8String.erase(n, 1);
++
++    std::wstring utf16String;
++
++    if (!Utf8toWStr(utf8String, utf16String))
++        return false;
++
++    std::transform(utf16String.begin(), utf16String.end(), utf16String.begin(), wcharToLower);
++
++    return WStrToUtf8(utf16String, utf8String);
++}
++
++/*
++// Find words by letters next to it.
++bool FindWordInSequence(const std::string& str, const std::string& word, const size_t maxDistBethChars)
++{
++    size_t charsCount = 0, distBethCharsCount = 0;
++    bool lastCharIsExist = false;
++
++    for (size_t i = 0, lastI = 0; i < str.size(); ++i)
++    {
++        if (str[i] == word[charsCount])
++        {
++            if (!lastCharIsExist)
++                lastI = i;
++
++            ++charsCount;
++            distBethCharsCount = 0;
++            lastCharIsExist = true;
++        }
++        else if (lastCharIsExist)
++            ++distBethCharsCount;
++
++        if (distBethCharsCount > maxDistBethChars)
++        {
++            i = lastI; 
++            charsCount = 0;
++            distBethCharsCount = 0;
++            lastCharIsExist = false;
++        }
++
++        if (charsCount >= word.size())
++            return true;
++    }
++
++    return false;
++}
++*/
++
++WordFilterMgr::WordFilterMgr() 
++{
++}
++
++WordFilterMgr::~WordFilterMgr()
++{
++}
++
++void WordFilterMgr::LoadLetterAnalogs()
++{
++    uint32 oldMSTime = getMSTime();
++
++    m_letterAnalogs.clear();
++
++    QueryResult result = WorldDatabase.Query("SELECT letter, analogs FROM letter_analogs");
++    if (!result)
++    {
++        sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded 0 letter analogs. DB table `letter_analogs` is empty!");
++        return;
++    }
++
++    uint32 count = 0;
++    do
++    {
++        Field* fields = result->Fetch();
++        char letter = fields[0].GetString()[0]; // !fields[0].GetInt8()
++        std::string analogs = fields[1].GetString();
++
++        NormalizeWord(analogs);
++        m_letterAnalogs[letter] = analogs; 
++
++        ++count;
++    }
++    while (result->NextRow());
++
++    sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded %u letter analogs in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
++}
++
++
++void WordFilterMgr::LoadBadWords()
++{
++    uint32 oldMSTime = getMSTime();
++
++    m_badWords.clear();
++
++    QueryResult result = WorldDatabase.Query("SELECT bad_word FROM bad_word");
++    if (!result)
++    {
++        sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded 0 bad words. DB table `bad_word` is empty!");
++        return;
++    }
++
++    uint32 count = 0;
++    do
++    {
++        Field* fields = result->Fetch();
++        std::string analog = fields[0].GetString();
++
++        AddBadWord(analog);
++
++        ++count;
++    }
++    while (result->NextRow());
++
++    sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded %u bad words in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
++}
++
++inline void WordFilterMgr::ConvertLettersToAnalogs(std::string& text)
++{
++    // todo: to change to STL algorithms (for optimize).
++    for (std::string::iterator sit = text.begin(); sit != text.end(); ++sit)
++		for (LetterAnalogMap::const_iterator mit = m_letterAnalogs.begin(); mit != m_letterAnalogs.end(); ++mit)
++            if (mit->second.find(*sit) != std::string::npos)
++            {
++                *sit = mit->first;
++                break;
++            }
++}
++
++std::string WordFilterMgr::FindBadWord(const std::string& text)
++{
++    std::string _text = text;
++	
++    if (_text.empty() || m_badWords.empty())
++        return "";
++
++    NormalizeWord(_text);
++    ConvertLettersToAnalogs(_text);
++
++    for (BadWordMap::const_iterator it = m_badWords.begin(); it != m_badWords.end(); ++it)
++	    if (_text.find(it->first) != std::string::npos)
++		    return it->second;
++
++    /* 
++    // At ~5 times slower.
++    for (BadWordMap::const_iterator it = m_badWords.begin(); it != m_badWords.end(); ++it)
++    {
++		if (it->second.size() <= 3)
++		{
++			if (_text.find(it->first) != std::string::npos)
++                return it->second;
++		}
++		else if (it->second.size() <= 7)
++		{
++			if(FindWordInSequence(_text, it->first, 1))
++                return it->second;
++		}
++		else
++		{
++			if(FindWordInSequence(_text, it->first, 2))
++                return it->second;
++		}
++    }
++    */
++
++    return "";
++}
++
++bool WordFilterMgr::AddBadWord(const std::string& badWord, bool toDB)
++{
++    std::string _badWord = badWord;
++  
++    NormalizeWord(_badWord);
++
++    std::string convertedBadWord = _badWord;
++    ConvertLettersToAnalogs(convertedBadWord);
++
++    // is already exist
++    if (m_badWords.find(convertedBadWord) != m_badWords.end())
++        return false;
++
++    m_badWords[convertedBadWord] = _badWord;
++
++    if (toDB)
++        WorldDatabase.PQuery("REPLACE INTO bad_word VALUES ('%s')", _badWord.c_str()); 
++
++    return true;
++}
++
++bool WordFilterMgr::RemoveBadWord(const std::string& badWord, bool fromDB)
++{
++    std::string _badWord = badWord;
++	
++    NormalizeWord(_badWord);
++
++    std::string convertedBadWord = _badWord;
++    ConvertLettersToAnalogs(convertedBadWord);
++
++    // is not exist
++    BadWordMap::iterator it = m_badWords.find(convertedBadWord);
++    if (it == m_badWords.end())
++        return false;
++
++    m_badWords.erase(it);
++
++    if (fromDB)
++        WorldDatabase.PExecute("DELETE FROM bad_word WHERE `bad_word` = '%s'", _badWord.c_str()); 
++
++    return true;
++}
+ src/server/game/Tools/WordFilterMgr.h | 61 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 61 insertions(+)
+
+diff --git a/src/server/game/Tools/WordFilterMgr.h b/src/server/game/Tools/WordFilterMgr.h
+new file mode 100644
+index 0000000..0120af8
+--- /dev/null
++++ b/src/server/game/Tools/WordFilterMgr.h
+@@ -0,0 +1,61 @@
++/*
++ * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation; either version 2 of the License, or (at your
++ * option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program. If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef TRINITYCORE_WORDFILTERMGR_H
++#define TRINITYCORE_WORDFILTERMGR_H
++
++#include <string>
++#include <map>
++#include <ace/Singleton.h>
++
++class WordFilterMgr
++{
++    private:
++        friend class ACE_Singleton<WordFilterMgr, ACE_Null_Mutex>;
++
++        WordFilterMgr();
++        ~WordFilterMgr();
++
++    public:
++		
++        /// Note for 0.6v : Will used std::map instead of UNORDERED_MAP, because of problems with cross-platform compilation.
++        // [letter][analogs] 
++        typedef std::map<char, std::string> LetterAnalogMap; 
++        // [converted][original]
++        typedef std::map<std::string, std::string> BadWordMap; 
++
++        void LoadLetterAnalogs();
++        void LoadBadWords();	
++		
++        inline void ConvertLettersToAnalogs(std::string& text);
++        std::string FindBadWord(const std::string& text);	
++		
++        // manipulations with container 
++        bool AddBadWord(const std::string& badWord, bool toDB = false);
++        bool RemoveBadWord(const std::string& badWord, bool fromDB = false);
++
++		// element (const) accessor 
++        BadWordMap GetBadWords() const { return m_badWords; }
++
++    private:
++        LetterAnalogMap m_letterAnalogs;
++        BadWordMap m_badWords; 
++};
++
++#define sWordFilterMgr ACE_Singleton<WordFilterMgr, ACE_Null_Mutex>::instance()
++
++#endif
+\ No newline at end of file
+ src/server/game/World/World.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/server/game/World/World.cpp b/src/server/game/World/World.cpp
+index 52ac2d2..d5b8e39 100644
+--- a/src/server/game/World/World.cpp
++++ b/src/server/game/World/World.cpp
+@@ -44,6 +44,7 @@
+ #include "CreatureEventAIMgr.h"
+ #include "SpellMgr.h"
+ #include "GroupMgr.h"
++#include "WordFilterMgr.h"
+ #include "Chat.h"
+ #include "DBCStores.h"
+ #include "LootMgr.h"
+@@ -946,6 +947,9 @@ void World::LoadConfigSettings(bool reload)
+     m_int_configs[CONFIG_CHATFLOOD_MESSAGE_DELAY] = sConfigMgr->GetIntDefault("ChatFlood.MessageDelay", 1);
+     m_int_configs[CONFIG_CHATFLOOD_MUTE_TIME]     = sConfigMgr->GetIntDefault("ChatFlood.MuteTime", 10);
+ 
++    m_int_configs[CONFIG_WORD_FILTER_MUTE_DURATION] = sConfigMgr->GetIntDefault("WordFilter.MuteDuration", 30000);
++    m_bool_configs[CONFIG_WORD_FILTER_ENABLE]       = sConfigMgr->GetBoolDefault("WordFilter.Enable", true);
++ 		
+     m_bool_configs[CONFIG_EVENT_ANNOUNCE] = sConfigMgr->GetIntDefault("Event.Announce", false);
+ 
+     m_float_configs[CONFIG_CREATURE_FAMILY_FLEE_ASSISTANCE_RADIUS] = sConfigMgr->GetFloatDefault("CreatureFamilyFleeAssistanceRadius", 30.0f);
+@@ -1343,6 +1347,12 @@ void World::SetInitialWorldSettings()
+     sObjectMgr->SetDBCLocaleIndex(GetDefaultDbcLocale());        // Get once for all the locale index of DBC language (console/broadcasts)
+     TC_LOG_INFO(LOG_FILTER_SERVER_LOADING, ">> Localization strings loaded in %u ms", GetMSTimeDiffToNow(oldMSTime));
+ 
++    TC_LOG_INFO(LOG_FILTER_SERVER_LOADING, "Loading Letter Analogs...");
++    sWordFilterMgr->LoadLetterAnalogs();
++
++    TC_LOG_INFO(LOG_FILTER_SERVER_LOADING, "Loading Bad Words...");
++    sWordFilterMgr->LoadBadWords();
++	
+     TC_LOG_INFO(LOG_FILTER_SERVER_LOADING, "Loading Account Roles and Permissions...");
+     sAccountMgr->LoadRBAC();
+ 
+ src/server/game/World/World.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/server/game/World/World.h b/src/server/game/World/World.h
+index 12586ed..4c7fcb6 100644
+--- a/src/server/game/World/World.h
++++ b/src/server/game/World/World.h
+@@ -113,6 +113,7 @@ enum WorldBoolConfigs
+     CONFIG_RESTRICTED_LFG_CHANNEL,
+     CONFIG_TALENTS_INSPECTING,
+     CONFIG_CHAT_FAKE_MESSAGE_PREVENTING,
++    CONFIG_WORD_FILTER_ENABLE,
+     CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVP,
+     CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVE,
+     CONFIG_DEATH_BONES_WORLD,
+@@ -251,6 +252,7 @@ enum WorldIntConfigs
+     CONFIG_CHATFLOOD_MESSAGE_COUNT,
+     CONFIG_CHATFLOOD_MESSAGE_DELAY,
+     CONFIG_CHATFLOOD_MUTE_TIME,
++    CONFIG_WORD_FILTER_MUTE_DURATION,
+     CONFIG_CREATURE_FAMILY_ASSISTANCE_DELAY,
+     CONFIG_CREATURE_FAMILY_FLEE_DELAY,
+     CONFIG_WORLD_BOSS_LEVEL_DIFF,
+ src/server/scripts/Commands/cs_misc.cpp | 112 ++++++++++++++++++++++++++++++++
+ 1 file changed, 112 insertions(+)
+
+diff --git a/src/server/scripts/Commands/cs_misc.cpp b/src/server/scripts/Commands/cs_misc.cpp
+index 6c7e838..adb59ae 100644
+--- a/src/server/scripts/Commands/cs_misc.cpp
++++ b/src/server/scripts/Commands/cs_misc.cpp
+@@ -15,6 +15,7 @@
+  * with this program. If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#include "WordFilterMgr.h"
+ #include "Chat.h"
+ #include "ScriptMgr.h"
+ #include "AccountMgr.h"
+@@ -68,6 +69,19 @@ public:
+             { "money",              SEC_ADMINISTRATOR,      true,  &HandleSendMoneyCommand,             "", NULL },
+             { NULL,                 0,                      false, NULL,                                "", NULL }
+         };
++        static ChatCommand badWordCommandTable[] =
++        {
++            { "add",                SEC_ADMINISTRATOR,      true,  &HandleBadWordAddCommand,            "", NULL },
++            { "remove",             SEC_ADMINISTRATOR,      true,  &HandleBadWordRemoveCommand,         "", NULL },
++            { "list",               SEC_ADMINISTRATOR,      true,  &HandleBadWordListCommand,           "", NULL },
++            { NULL,                 0,                      false, NULL,                                "", NULL }
++        };
++        static ChatCommand wordFilterCommandTable[] =
++        {
++            { "badword",            SEC_ADMINISTRATOR,      true,  NULL,                                "", badWordCommandTable },
++            { "mod",                SEC_ADMINISTRATOR,      true,  &HandleWordFilterModCommand,         "", NULL },
++            { NULL,                 0,                      false, NULL,                                "", NULL }
++        };
+         static ChatCommand commandTable[] =
+         {
+             { "dev",                SEC_ADMINISTRATOR,      false, &HandleDevCommand,                   "", NULL },
+@@ -122,6 +136,7 @@ public:
+             { "bindsight",          SEC_ADMINISTRATOR,      false, HandleBindSightCommand,              "", NULL },
+             { "unbindsight",        SEC_ADMINISTRATOR,      false, HandleUnbindSightCommand,            "", NULL },
+             { "playall",            SEC_GAMEMASTER,         false, HandlePlayAllCommand,                "", NULL },
++            { "wordfilter",         SEC_ADMINISTRATOR,      false, NULL,                                "", wordFilterCommandTable },
+             { NULL,                 0,                      false, NULL,                                "", NULL }
+         };
+         return commandTable;
+@@ -2587,6 +2602,103 @@ public:
+         return true;
+     }
+ 
++    static bool HandleBadWordAddCommand(ChatHandler* handler, char const* args)
++    {
++        std::string badWord = args;
++
++		const uint8 maxWordSize = 3;
++        if (badWord.size() <= maxWordSize)
++        {
++            handler->PSendSysMessage("The word '%s' is incorrect! The word length must be greater than %u.", badWord.c_str(), maxWordSize);
++            return false;
++		 }
++
++        if (!sWordFilterMgr->AddBadWord(badWord, true))
++        {
++            handler->PSendSysMessage("The word '%s' is exist!", badWord.c_str());
++            return false;
++		 }
++
++        handler->PSendSysMessage("The word '%s' is added to 'bad_word'.", badWord.c_str());
++        return true;
++    }
++
++    static bool HandleBadWordRemoveCommand(ChatHandler* handler, char const* args)
++    {
++        std::string badWord = args;
++
++        if (!sWordFilterMgr->RemoveBadWord(args, true))
++        {
++            handler->PSendSysMessage("The word '%s' is not exist!", badWord.c_str());
++            return false;
++        }
++
++        handler->PSendSysMessage("The word '%s' is removed from 'bad_word'.", badWord.c_str());
++        return true;
++    }
++
++    static bool HandleBadWordListCommand(ChatHandler* handler, char const* args)
++    {
++        WordFilterMgr::BadWordMap const& badWords = sWordFilterMgr->GetBadWords();
++		
++        if (badWords.empty())
++        {
++            handler->PSendSysMessage("empty.");
++            return true;
++        }
++
++        std::string strBadWordList;
++        uint16 addressesSize = 0;
++        const uint16 maxAddressesSize = 255; // !uint8
++
++        for (WordFilterMgr::BadWordMap::const_iterator it = badWords.begin(); it != badWords.end(); ++it)
++        {
++            strBadWordList.append(it->second);
++
++            if ((*it) != (*badWords.rbegin()))
++                strBadWordList.append(", ");
++            else
++                strBadWordList.append(".");
++
++            // send
++            if (addressesSize >= maxAddressesSize || (*it) >= (*badWords.rbegin()))
++            {
++                handler->PSendSysMessage("Bad words: %s", strBadWordList.c_str());
++                strBadWordList.clear();
++                addressesSize = 0;
++            }
++
++            addressesSize += it->second.size();
++        }
++
++        return true;
++	}
++
++    static bool HandleWordFilterModCommand(ChatHandler* handler, char const* args)
++    {
++        std::string argstr = (char*)args;
++        if (argstr == "on")
++        {
++            sWorld->setBoolConfig(CONFIG_WORD_FILTER_ENABLE, true);
++            handler->PSendSysMessage("WordFilter: mod is enabled");
++            return true;
++        }
++        if (argstr == "off")
++        {
++            sWorld->setBoolConfig(CONFIG_WORD_FILTER_ENABLE, false);
++            handler->PSendSysMessage("WordFilter: mod is disabled");
++            return true;
++        }
++
++        std::string strModIs = sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) ? "enabled" : "disabled";
++        handler->PSendSysMessage("WordFilter: mod is now %s.", strModIs.c_str());
++
++        handler->SendSysMessage(LANG_USE_BOL);
++        handler->SetSentErrorMessage(true);
++		
++        return true;
++    }
++
+     static bool HandleCreatePetCommand(ChatHandler* handler, char const* /*args*/)
+     {
+         Player* player = handler->GetSession()->GetPlayer();
+ src/server/scripts/Commands/cs_reload.cpp | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/src/server/scripts/Commands/cs_reload.cpp b/src/server/scripts/Commands/cs_reload.cpp
+index 829152b..db33ec8 100644
+--- a/src/server/scripts/Commands/cs_reload.cpp
++++ b/src/server/scripts/Commands/cs_reload.cpp
+@@ -41,6 +41,7 @@ EndScriptData */
+ #include "TicketMgr.h"
+ #include "WardenCheckMgr.h"
+ #include "WaypointManager.h"
++#include "WordFilterMgr.h"
+ 
+ class reload_commandscript : public CommandScript
+ {
+@@ -76,6 +77,7 @@ public:
+             { "areatrigger_tavern",           SEC_ADMINISTRATOR, true,  &HandleReloadAreaTriggerTavernCommand,          "", NULL },
+             { "areatrigger_teleport",         SEC_ADMINISTRATOR, true,  &HandleReloadAreaTriggerTeleportCommand,        "", NULL },
+             { "autobroadcast",                SEC_ADMINISTRATOR, true,  &HandleReloadAutobroadcastCommand,              "", NULL },
++            { "bad_word",                     SEC_ADMINISTRATOR, true,  &HandleReloadBadWordCommand,                    "", NULL },
+             { "command",                      SEC_ADMINISTRATOR, true,  &HandleReloadCommandCommand,                    "", NULL },
+             { "conditions",                   SEC_ADMINISTRATOR, true,  &HandleReloadConditions,                        "", NULL },
+             { "config",                       SEC_ADMINISTRATOR, true,  &HandleReloadConfigCommand,                     "", NULL },
+@@ -105,6 +107,7 @@ public:
+             { "item_enchantment_template",    SEC_ADMINISTRATOR, true,  &HandleReloadItemEnchantementsCommand,          "", NULL },
+             { "item_loot_template",           SEC_ADMINISTRATOR, true,  &HandleReloadLootTemplatesItemCommand,          "", NULL },
+             { "item_set_names",               SEC_ADMINISTRATOR, true,  &HandleReloadItemSetNamesCommand,               "", NULL },
++            { "letter_analog",                SEC_ADMINISTRATOR, true,  &HandleReloadLetterAnalogCommand,               "", NULL },
+             { "lfg_dungeon_rewards",          SEC_ADMINISTRATOR, true,  &HandleReloadLfgRewardsCommand,                 "", NULL },
+             { "locales_achievement_reward",   SEC_ADMINISTRATOR, true,  &HandleReloadLocalesAchievementRewardCommand,   "", NULL },
+             { "locales_creature",             SEC_ADMINISTRATOR, true,  &HandleReloadLocalesCreatureCommand,            "", NULL },
+@@ -204,6 +207,9 @@ public:
+         HandleReloadVehicleTemplateAccessoryCommand(handler, "");
+ 
+         HandleReloadAutobroadcastCommand(handler, "");
++
++        HandleReloadBadWordCommand(handler, "");
++        HandleReloadLetterAnalogCommand(handler, "");
+         return true;
+     }
+ 
+@@ -387,6 +393,14 @@ public:
+         return true;
+     }
+ 
++    static bool HandleReloadBadWordCommand(ChatHandler* handler, const char* /*args*/)
++    {
++        sLog->outInfo(LOG_FILTER_GENERAL, "Re-Loading Bad Words...");
++        sWordFilterMgr->LoadBadWords();
++        handler->SendGlobalGMSysMessage("DB table `bad_word` reloaded.");
++        return true;
++    }
++
+     static bool HandleReloadCommandCommand(ChatHandler* handler, const char* /*args*/)
+     {
+         handler->SetLoadCommandTable(true);
+@@ -961,6 +975,14 @@ public:
+         return true;
+     }
+ 
++    static bool HandleReloadLetterAnalogCommand(ChatHandler* handler, const char* /*args*/)
++    {
++        sLog->outInfo(LOG_FILTER_GENERAL, "Re-Loading Letter Analogs...");
++        sWordFilterMgr->LoadLetterAnalogs();
++        handler->SendGlobalGMSysMessage("DB table `letter_analog` reloaded.");
++        return true;
++    }
++ 
+     static bool HandleReloadEventScriptsCommand(ChatHandler* handler, const char* args)
+     {
+         if (sScriptMgr->IsScriptScheduled())
+ src/server/worldserver/worldserver.conf.dist | 25 +++++++++++++++++++++++--
+ 1 file changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/src/server/worldserver/worldserver.conf.dist b/src/server/worldserver/worldserver.conf.dist
+index c4e19e8..ddeb1d5 100644
+--- a/src/server/worldserver/worldserver.conf.dist
++++ b/src/server/worldserver/worldserver.conf.dist
+@@ -15,6 +15,7 @@
+ #    PLAYER INTERACTION
+ #    CREATURE SETTINGS
+ #    CHAT SETTINGS
++#    WORD FILTER SETTINGS
+ #    GAME MASTER SETTINGS
+ #    VISIBILITY AND DISTANCES
+ #    SERVER RATES
+@@ -1444,7 +1445,7 @@ ListenRange.Yell = 300
+ #        Default:     0 - (Disabled)
+ #                     1 - (Enabled)
+ 
+-ChatFakeMessagePreventing = 0
++ChatFakeMessagePreventing = 1
+ 
+ #
+ #    ChatStrictLinkChecking.Severity
+@@ -1474,7 +1475,7 @@ ChatStrictLinkChecking.Kick = 0
+ #        Default:     10 - (Enabled)
+ #                     0  - (Disabled)
+ 
+-ChatFlood.MessageCount = 10
++ChatFlood.MessageCount = 3
+ 
+ #
+ #    ChatFlood.MessageDelay
+@@ -1544,6 +1545,26 @@ PreserveCustomChannelDuration = 14
+ ###################################################################################################
+ 
+ ###################################################################################################
++# WORD FILTER SETTINGS
++#
++#    WordFilter.Enable
++#        Description: Filtering players chat for bad words.
++#        Default:     1 - (Enabled)
++#                     0 - (Disabled)
++
++WordFilter.Enable = 1
++
++#    WordFilter.MuteDuration
++#        Description: Mute chat for player.
++#        Default:     10000 - (10 sec)
++#                     0     - (Disabled)
++
++WordFilter.MuteDuration = 10000
++
++#
++###################################################################################################
++
++###################################################################################################
+ # GAME MASTER SETTINGS
+ #
+ #    GM.LoginState
