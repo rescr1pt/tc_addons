@@ -1,0 +1,150 @@
+# UT Adwards - notification players on the Battlegrounds in style "Unreal Tournament".
+# Version: 0.7
+# https://github.com/rescr1pt/tc_addons
+
+ src/server/game/Battlegrounds/Battleground.cpp | 71 ++++++++++++++++++++++++++
+ 1 file changed, 71 insertions(+)
+
+diff --git a/src/server/game/Battlegrounds/Battleground.cpp b/src/server/game/Battlegrounds/Battleground.cpp
+index 21c054c..392cac0 100644
+--- a/src/server/game/Battlegrounds/Battleground.cpp
++++ b/src/server/game/Battlegrounds/Battleground.cpp
+@@ -1802,6 +1802,16 @@ void Battleground::HandleKillPlayer(Player* victim, Player* killer)
+         if (killer == victim)
+             return;
+ 
++        // First blood 
++        for (BattlegroundScoreMap::const_iterator itr = PlayerScores.begin(); itr != PlayerScores.end(); ++itr)
++        {
++            if (itr->second->HonorableKills != 0)
++                break;
++
++            if ((*itr) == (*PlayerScores.rbegin()))
++                PSendMessageToAll(LANG_UTA_FIRST_BLOOD, CHAT_MSG_BG_SYSTEM_NEUTRAL, NULL, killer->GetName().c_str());
++        }
++
+         UpdatePlayerScore(killer, SCORE_HONORABLE_KILLS, 1);
+         UpdatePlayerScore(killer, SCORE_KILLING_BLOWS, 1);
+ 
+@@ -1822,6 +1832,67 @@ void Battleground::HandleKillPlayer(Player* victim, Player* killer)
+         victim->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
+         RewardXPAtKill(killer, victim);
+     }
++
++    if (!isBattleground() || !victim || !killer || !PlayerScores.find(victim->GetGUID())->second || !PlayerScores.find(killer->GetGUID())->second)
++        return;
++
++    BattlegroundScore::KillStreakInfo& victimKillStreak = PlayerScores.find(victim->GetGUID())->second->KillStreak;
++    BattlegroundScore::KillStreakInfo& killerKillStreak = PlayerScores.find(killer->GetGUID())->second->KillStreak;
++
++    // Can freely to change it.
++    const uint8 IntervBetKills = 5;
++
++    // Interrupted a series of kills
++    if (victimKillStreak.Public >= IntervBetKills) 
++        PSendMessageToAll(LANG_UTA_INTERRUPTED_SERIES, CHAT_MSG_BG_SYSTEM_NEUTRAL, NULL, killer->GetName().c_str(), victim->GetName().c_str());
++
++    victimKillStreak.Private = 0;
++    victimKillStreak.Public = 0;
++    ++killerKillStreak.Private;
++    ++killerKillStreak.Public;
++
++    // Public award
++    uint16 divided = killerKillStreak.Public / IntervBetKills;
++    if (divided > 0 && (killerKillStreak.Public % IntervBetKills) == 0)
++    {
++        int32 publicAwardEntry = LANG_UTA_KILLING_SPREE + (divided - 1);
++        if (publicAwardEntry > LANG_UTA_BEYOND_GODLIKE)
++            publicAwardEntry = LANG_UTA_BEYOND_GODLIKE;
++ 
++        PSendMessageToAll(publicAwardEntry, CHAT_MSG_BG_SYSTEM_NEUTRAL, NULL, killer->GetName().c_str());
++    }
++
++    // Private award
++    const uint16 maxTimeIntervBetwKills = 5000;
++    if (killerKillStreak.Private >= 2)
++    {
++        if (GetMSTimeDiffToNow(killerKillStreak.LastKillTime) <= maxTimeIntervBetwKills)
++        {
++            int32 privateAwardEntry = LANG_UTA_DOUBLE_KILL + (killerKillStreak.Private - 2);
++            if (privateAwardEntry > LANG_UTA_HOLY_SHIT)
++                privateAwardEntry = LANG_UTA_HOLY_SHIT;
++
++            std::string message(killer->GetSession()->GetTrinityString(privateAwardEntry));
++   
++            // todo: packet builder
++            WorldPacket data(SMSG_MESSAGECHAT, 200);
++            data << (uint8)CHAT_MSG_RAID_BOSS_EMOTE;
++            data << (uint32)LANG_UNIVERSAL;
++            data << (uint64)0;
++            data << (uint32)0;  
++            data << (uint32)1;
++            data << (uint8)0;
++            data << (uint64)0;
++            data << (uint32)(message.length() + 1);
++            data << message.c_str();
++            data << (uint8)0;
++            killer->GetSession()->SendPacket(&data);
++        }
++        else
++            killerKillStreak.Private = 1;
++    }
++
++    killerKillStreak.LastKillTime = getMSTime();
+ }
+ 
+ // Return the player's team based on battlegroundplayer info
+ src/server/game/Battlegrounds/Battleground.h | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/server/game/Battlegrounds/Battleground.h b/src/server/game/Battlegrounds/Battleground.h
+index 1f18054..0ca6c41 100644
+--- a/src/server/game/Battlegrounds/Battleground.h
++++ b/src/server/game/Battlegrounds/Battleground.h
+@@ -261,6 +261,15 @@ struct BattlegroundScore
+     uint32 BonusHonor;
+     uint32 DamageDone;
+     uint32 HealingDone;
++
++    struct KillStreakInfo
++    {
++        KillStreakInfo() : Private(0), Public(0), LastKillTime(0) {}
++
++        uint8 Private;
++        uint16 Public;
++        uint32 LastKillTime;
++    } KillStreak;
+ };
+ 
+ enum BGHonorMode
+ src/server/game/Miscellaneous/Language.h | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/server/game/Miscellaneous/Language.h b/src/server/game/Miscellaneous/Language.h
+index 772d5bc..4147e6e 100644
+--- a/src/server/game/Miscellaneous/Language.h
++++ b/src/server/game/Miscellaneous/Language.h
+@@ -1217,6 +1217,23 @@ enum TrinityStrings
+     LANG_AUTO_BROADCAST                 = 11000,
+     LANG_INVALID_REALMID                = 11001,
+ 
++	 // UT Awards
++    LANG_UTA_DOUBLE_KILL                = 20100,
++    LANG_UTA_TRIPLE_KILL                = 20101,
++    LANG_UTA_MULTI_KILL                 = 20102,
++    LANG_UTA_MEGA_KILL                  = 20103,
++    LANG_UTA_ULTRA_KILL                 = 20104,
++    LANG_UTA_MONSTER_KILL               = 20105,
++    LANG_UTA_HOLY_SHIT                  = 20106,
++    LANG_UTA_FIRST_BLOOD                = 20110,
++    LANG_UTA_KILLING_SPREE              = 20111,
++    LANG_UTA_DOMINATION                 = 20112,
++    LANG_UTA_RAMPAGE                    = 20113,
++    LANG_UTA_UNSTOPPABLE                = 20114,
++    LANG_UTA_GODLIKE                    = 20115,
++    LANG_UTA_BEYOND_GODLIKE             = 20116,
++    LANG_UTA_INTERRUPTED_SERIES         = 20119,
++
+     // NOT RESERVED IDS                   12000-1999999999
+     // `db_script_string` table index     2000000000-2000009999 (MIN_DB_SCRIPT_STRING_ID-MAX_DB_SCRIPT_STRING_ID)
+     // For other tables maybe             2000010000-2147483647 (max index)
