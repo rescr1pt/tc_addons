@@ -1,0 +1,195 @@
+# Modifier online characters - system for automatic rewards(so far coin) online(without AFK) players.
+# Version 0.7
+# https://github.com/rescr1pt/tc_addons
+
+ sql/tc_addons/world_modifier_online_character.sql | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sql/tc_addons/world_modifier_online_character.sql b/sql/tc_addons/world_modifier_online_character.sql
+new file mode 100644
+index 0000000..041d660
+--- /dev/null
++++ b/sql/tc_addons/world_modifier_online_character.sql
+@@ -0,0 +1,4 @@
++DELETE FROM `trinity_string` WHERE `entry` IN (11400, 11401);
++REPLACE INTO `trinity_string` (`entry`, `content_default`, `content_loc1`, `content_loc2`, `content_loc3`, `content_loc4`, `content_loc5`, `content_loc6`, `content_loc7`, `content_loc8`) VALUES
++  (11400, '|cffd3f4bcTime for rewards online players.|r', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '|cffd3f4bcВремя выдачи наград онлайн игрокам.|r'),
++  (11401, 'You sent %u coins as a reward for visiting our world. Thank you for the world!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Вам было отправлено %u монет в качестве награды за посещение нашего мира. Спасибо, что с нами!');
+ src/server/game/Miscellaneous/Language.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/server/game/Miscellaneous/Language.h b/src/server/game/Miscellaneous/Language.h
+index 772d5bc..8fb2c8a 100644
+--- a/src/server/game/Miscellaneous/Language.h
++++ b/src/server/game/Miscellaneous/Language.h
+@@ -1217,6 +1217,9 @@ enum TrinityStrings
+     LANG_AUTO_BROADCAST                 = 11000,
+     LANG_INVALID_REALMID                = 11001,
+ 
++    LANG_MODIFIER_ONLINE_CHARACTERS_BROADCAST = 11400,
++    LANG_MODIFIER_ONLINE_CHARACTERS_WHISPER   = 11401,
++
+     // NOT RESERVED IDS                   12000-1999999999
+     // `db_script_string` table index     2000000000-2000009999 (MIN_DB_SCRIPT_STRING_ID-MAX_DB_SCRIPT_STRING_ID)
+     // For other tables maybe             2000010000-2147483647 (max index)
+ src/server/game/World/World.cpp | 39 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/src/server/game/World/World.cpp b/src/server/game/World/World.cpp
+index 52ac2d2..c374ede 100644
+--- a/src/server/game/World/World.cpp
++++ b/src/server/game/World/World.cpp
+@@ -1229,6 +1229,14 @@ void World::LoadConfigSettings(bool reload)
+     m_float_configs[CONFIG_STATS_LIMITS_BLOCK] = sConfigMgr->GetFloatDefault("Stats.Limits.Block", 95.0f);
+     m_float_configs[CONFIG_STATS_LIMITS_CRIT] = sConfigMgr->GetFloatDefault("Stats.Limits.Crit", 95.0f);
+ 
++
++    // modifier online characters
++    m_bool_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE] = sConfigMgr->GetBoolDefault("ModifierOnlineCharacters.Enable", true);
++    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_TIMER] = (sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MinTimer", 60) * MINUTE * IN_MILLISECONDS);
++    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER] = (sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MaxTimer", 180) * MINUTE * IN_MILLISECONDS);
++    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY] = sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MinMoney", 100);
++    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY] = sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MaxMoney", 200);
++ 	
+     // call ScriptMgr if we're reloading the configuration
+     if (reload)
+         sScriptMgr->OnConfigLoad(reload);
+@@ -1715,6 +1723,9 @@ void World::SetInitialWorldSettings()
+ 
+     m_timers[WUPDATE_PINGDB].SetInterval(getIntConfig(CONFIG_DB_PING_INTERVAL)*MINUTE*IN_MILLISECONDS);    // Mysql ping time in minutes
+ 
++    uint32 mocInterval = urand(getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_TIMER), getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER));
++    m_timers[WUPDATE_MODIFIER_ONLINE_CHARACTERS].SetInterval(mocInterval);
++
+     //to set mailtimer to return mails every day between 4 and 5 am
+     //mailtimer is increased when updating auctions
+     //one second is 1000 -(tested on win system)
+@@ -2083,6 +2094,34 @@ void World::Update(uint32 diff)
+         WorldDatabase.KeepAlive();
+     }
+ 
++    if (m_timers[WUPDATE_MODIFIER_ONLINE_CHARACTERS].Passed())
++    {
++        m_timers[WUPDATE_MODIFIER_ONLINE_CHARACTERS].Reset();
++
++        if (getBoolConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE))
++        {
++            // Send separately because not all players sent.
++            SendWorldText(LANG_MODIFIER_ONLINE_CHARACTERS_BROADCAST);
++
++            for (SessionMap::const_iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
++            {
++                if (!itr->second)
++                    continue;
++
++                Player* player = itr->second->GetPlayer();
++
++                if (!player || !player->IsInWorld() || player->isAFK())
++                    continue;
++
++                uint32 sendMoneyCount = urand(getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY), getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY));
++                sendMoneyCount = (sendMoneyCount * player->getLevel()) / 10;
++
++                player->ModifyMoney(sendMoneyCount);
++                ChatHandler(itr->second).PSendSysMessage(LANG_MODIFIER_ONLINE_CHARACTERS_WHISPER, sendMoneyCount); 
++            }
++        }
++    }
++
+     // update the instance reset times
+     sInstanceSaveMgr->Update();
+ 
+ src/server/game/World/World.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/server/game/World/World.h b/src/server/game/World/World.h
+index 12586ed..fa006c9 100644
+--- a/src/server/game/World/World.h
++++ b/src/server/game/World/World.h
+@@ -78,6 +78,7 @@ enum WorldTimers
+     WUPDATE_MAILBOXQUEUE,
+     WUPDATE_DELETECHARS,
+     WUPDATE_PINGDB,
++    WUPDATE_MODIFIER_ONLINE_CHARACTERS,
+     WUPDATE_COUNT
+ };
+ 
+@@ -160,6 +161,7 @@ enum WorldBoolConfigs
+     CONFIG_UI_QUESTLEVELS_IN_DIALOGS,     // Should we add quest levels to the title in the NPC dialogs?
+     CONFIG_EVENT_ANNOUNCE,
+     CONFIG_STATS_LIMITS_ENABLE,
++    CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE,
+     BOOL_CONFIG_VALUE_COUNT
+ };
+ 
+@@ -326,6 +328,10 @@ enum WorldIntConfigs
+     CONFIG_WINTERGRASP_BATTLETIME,
+     CONFIG_WINTERGRASP_NOBATTLETIME,
+     CONFIG_WINTERGRASP_RESTART_AFTER_CRASH,
++    CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_TIMER,
++    CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER,
++    CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY,
++    CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY,
+     INT_CONFIG_VALUE_COUNT
+ };
+ 
+ src/server/worldserver/worldserver.conf.dist | 42 ++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/src/server/worldserver/worldserver.conf.dist b/src/server/worldserver/worldserver.conf.dist
+index c4e19e8..8665f9b 100644
+--- a/src/server/worldserver/worldserver.conf.dist
++++ b/src/server/worldserver/worldserver.conf.dist
+@@ -28,6 +28,7 @@
+ #    CHARACTER DELETE OPTIONS
+ #    CUSTOM SERVER OPTIONS
+ #    LOGGING SYSTEM SETTINGS
++#    MODIFIER ONLINE CHARACTERS
+ #
+ ###################################################################################################
+ 
+@@ -2794,3 +2795,44 @@ Log.Async.Enable = 0
+ 
+ #
+ ###################################################################################################
++
++###################################################################################################################
++# MODIFIER ONLINE CHARACTERS
++#
++#    ModifierOnlineCharacters.Enable
++#        Set Modifier Online Characters status.
++#        Default: 1 - Enable
++#                 0 - Disable
++
++ModifierOnlineCharacters.Enable = 1
++
++#    ModifierOnlineCharacters.MinTimer
++#        Set min interval between sending characters
++#        Default: 60 (1 hours)
++
++ModifierOnlineCharacters.MinTimer = 60
++
++#    ModifierOnlineCharacters.MinTimer
++#        Set min interval between sending characters
++#        Default: 180 (3 hours)
++
++ModifierOnlineCharacters.MaxTimer = 180
++
++#    ModifierOnlineCharacters.MinMoney
++#        Set the min amount of money to add to the online players.(coper)
++#        Will be sent with the calculation: (ModifierOnlineCharacters.MinMoney * Character Level) / 10
++#
++#        Default: 100
++
++ModifierOnlineCharacters.MinMoney = 100
++
++#    ModifierOnlineCharacters.MaxMoney
++#        Set the max amount of money to add to the online players.(coper)
++#        Will be sent with the calculation: (ModifierOnlineCharacters.MaxMoney * Character Level) / 10
++#
++#        Default: 200
++
++ModifierOnlineCharacters.MaxMoney = 200
++
++#
++###################################################################################################################
