@@ -1,5 +1,5 @@
-# Modifier online characters - system for automatic rewards(so far coin) online(without AFK) players.
-# Version 0.7
+# UT Adwards - notification players on the Battlegrounds in style "Unreal Tournament".
+# Version: 0.8
 # https://github.com/rescr1pt/tc_addons
 
  sql/tc_addons/world_modifier_online_character.sql | 4 ++++
@@ -7,7 +7,7 @@
 
 diff --git a/sql/tc_addons/world_modifier_online_character.sql b/sql/tc_addons/world_modifier_online_character.sql
 new file mode 100644
-index 0000000..041d660
+index 0000000..8719854
 --- /dev/null
 +++ b/sql/tc_addons/world_modifier_online_character.sql
 @@ -0,0 +1,4 @@
@@ -19,10 +19,10 @@ index 0000000..041d660
  1 file changed, 3 insertions(+)
 
 diff --git a/src/server/game/Miscellaneous/Language.h b/src/server/game/Miscellaneous/Language.h
-index 772d5bc..8fb2c8a 100644
+index 327d7ed..f86ffd6 100644
 --- a/src/server/game/Miscellaneous/Language.h
 +++ b/src/server/game/Miscellaneous/Language.h
-@@ -1217,6 +1217,9 @@ enum TrinityStrings
+@@ -1215,6 +1215,9 @@ enum TrinityStrings
      LANG_AUTO_BROADCAST                 = 11000,
      LANG_INVALID_REALMID                = 11001,
  
@@ -36,12 +36,12 @@ index 772d5bc..8fb2c8a 100644
  1 file changed, 39 insertions(+)
 
 diff --git a/src/server/game/World/World.cpp b/src/server/game/World/World.cpp
-index 52ac2d2..c374ede 100644
+index 7ad7b68..e0915c7 100644
 --- a/src/server/game/World/World.cpp
 +++ b/src/server/game/World/World.cpp
-@@ -1229,6 +1229,14 @@ void World::LoadConfigSettings(bool reload)
-     m_float_configs[CONFIG_STATS_LIMITS_BLOCK] = sConfigMgr->GetFloatDefault("Stats.Limits.Block", 95.0f);
-     m_float_configs[CONFIG_STATS_LIMITS_CRIT] = sConfigMgr->GetFloatDefault("Stats.Limits.Crit", 95.0f);
+@@ -1252,6 +1252,14 @@ void World::LoadConfigSettings(bool reload)
+ 
+     m_int_configs[CONFIG_PACKET_SPOOF_BANDURATION] = sConfigMgr->GetIntDefault("PacketSpoof.BanDuration", 86400);
  
 +
 +    // modifier online characters
@@ -54,7 +54,7 @@ index 52ac2d2..c374ede 100644
      // call ScriptMgr if we're reloading the configuration
      if (reload)
          sScriptMgr->OnConfigLoad(reload);
-@@ -1715,6 +1723,9 @@ void World::SetInitialWorldSettings()
+@@ -1741,6 +1749,9 @@ void World::SetInitialWorldSettings()
  
      m_timers[WUPDATE_PINGDB].SetInterval(getIntConfig(CONFIG_DB_PING_INTERVAL)*MINUTE*IN_MILLISECONDS);    // Mysql ping time in minutes
  
@@ -64,7 +64,7 @@ index 52ac2d2..c374ede 100644
      //to set mailtimer to return mails every day between 4 and 5 am
      //mailtimer is increased when updating auctions
      //one second is 1000 -(tested on win system)
-@@ -2083,6 +2094,34 @@ void World::Update(uint32 diff)
+@@ -2108,6 +2119,34 @@ void World::Update(uint32 diff)
          WorldDatabase.KeepAlive();
      }
  
@@ -103,7 +103,7 @@ index 52ac2d2..c374ede 100644
  1 file changed, 6 insertions(+)
 
 diff --git a/src/server/game/World/World.h b/src/server/game/World/World.h
-index 12586ed..fa006c9 100644
+index 9435fa8..f003dab 100644
 --- a/src/server/game/World/World.h
 +++ b/src/server/game/World/World.h
 @@ -78,6 +78,7 @@ enum WorldTimers
@@ -119,10 +119,10 @@ index 12586ed..fa006c9 100644
      CONFIG_EVENT_ANNOUNCE,
      CONFIG_STATS_LIMITS_ENABLE,
 +    CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE,
+     CONFIG_INSTANCES_RESET_ANNOUNCE,
      BOOL_CONFIG_VALUE_COUNT
  };
- 
-@@ -326,6 +328,10 @@ enum WorldIntConfigs
+@@ -327,6 +329,10 @@ enum WorldIntConfigs
      CONFIG_WINTERGRASP_BATTLETIME,
      CONFIG_WINTERGRASP_NOBATTLETIME,
      CONFIG_WINTERGRASP_RESTART_AFTER_CRASH,
@@ -130,25 +130,25 @@ index 12586ed..fa006c9 100644
 +    CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER,
 +    CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY,
 +    CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY,
-     INT_CONFIG_VALUE_COUNT
- };
- 
+     CONFIG_PACKET_SPOOF_POLICY,
+     CONFIG_PACKET_SPOOF_BANMODE,
+     CONFIG_PACKET_SPOOF_BANDURATION,
  src/server/worldserver/worldserver.conf.dist | 42 ++++++++++++++++++++++++++++
  1 file changed, 42 insertions(+)
 
 diff --git a/src/server/worldserver/worldserver.conf.dist b/src/server/worldserver/worldserver.conf.dist
-index c4e19e8..8665f9b 100644
+index 23db333..605c50b 100644
 --- a/src/server/worldserver/worldserver.conf.dist
 +++ b/src/server/worldserver/worldserver.conf.dist
-@@ -28,6 +28,7 @@
- #    CHARACTER DELETE OPTIONS
+@@ -29,6 +29,7 @@
  #    CUSTOM SERVER OPTIONS
  #    LOGGING SYSTEM SETTINGS
+ #    PACKET SPOOF PROTECTION SETTINGS
 +#    MODIFIER ONLINE CHARACTERS
  #
  ###################################################################################################
  
-@@ -2794,3 +2795,44 @@ Log.Async.Enable = 0
+@@ -2858,3 +2859,44 @@ PacketSpoof.BanDuration = 86400
  
  #
  ###################################################################################################

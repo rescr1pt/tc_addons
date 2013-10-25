@@ -1,5 +1,5 @@
 # Word Filter - system for the control of incorrect messages. 
-# Version 0.75
+# Version 0.8
 # https://github.com/rescr1pt/tc_addons
 
  sql/tc_addons/word_filter.sql | 66 +++++++++++++++++++++++++++++++++++++++++++
@@ -77,14 +77,36 @@ index 0000000..49382af
 +('wordfilter badword remove', 3, 'Syntax: .wordfilter badword remove #word'),
 +('wordfilter badword list', 3, 'Syntax: .wordfilter badword list'),
 +('wordfilter mod', 3, 'Syntax: .wordfilter mod on/off');
+ src/server/game/Accounts/RBAC.h | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/server/game/Accounts/RBAC.h b/src/server/game/Accounts/RBAC.h
+index bcc4122..d7f22393 100644
+--- a/src/server/game/Accounts/RBAC.h
++++ b/src/server/game/Accounts/RBAC.h
+@@ -679,6 +679,14 @@ enum RBACPermissions
+     RBAC_PERM_COMMAND_WP_RELOAD                              = 773,
+     RBAC_PERM_COMMAND_WP_SHOW                                = 774,
+ 
++    RBAC_PERM_COMMAND_WORDFILTER                             = 775,
++    RBAC_PERM_COMMAND_WORDFILTER_MOD                         = 776,
++    RBAC_PERM_COMMAND_WORDFILTER_BADWORD                     = 777,
++    RBAC_PERM_COMMAND_WORDFILTER_BADWORD_ADD                 = 778,
++    RBAC_PERM_COMMAND_WORDFILTER_BADWORD_REMOVE              = 779,
++    RBAC_PERM_COMMAND_WORDFILTER_BADWORD_LIST                = 780,
++    RBAC_PERM_COMMAND_RELOAD_BAD_WORD                        = 781,
++    RBAC_PERM_COMMAND_RELOAD_LETTER_ANALOG                   = 782,
+     // custom permissions 1000+
+     RBAC_PERM_MAX
+ };
  src/server/game/Entities/Player/Player.h | 2 ++
  1 file changed, 2 insertions(+)
 
 diff --git a/src/server/game/Entities/Player/Player.h b/src/server/game/Entities/Player/Player.h
-index 6cc8c0c..b917889 100644
+index fee542a..86259cb 100644
 --- a/src/server/game/Entities/Player/Player.h
 +++ b/src/server/game/Entities/Player/Player.h
-@@ -2294,6 +2294,8 @@ class Player : public Unit, public GridObject<Player>
+@@ -2296,6 +2296,8 @@ class Player : public Unit, public GridObject<Player>
          std::string GetMapAreaAndZoneString();
          std::string GetCoordsMapAreaAndZoneString();
  
@@ -97,7 +119,7 @@ index 6cc8c0c..b917889 100644
  1 file changed, 7 insertions(+)
 
 diff --git a/src/server/game/Globals/ObjectMgr.cpp b/src/server/game/Globals/ObjectMgr.cpp
-index 4d6eab4..0d0510d 100644
+index 86e6963..b04034d 100644
 --- a/src/server/game/Globals/ObjectMgr.cpp
 +++ b/src/server/game/Globals/ObjectMgr.cpp
 @@ -20,6 +20,7 @@
@@ -108,7 +130,7 @@ index 4d6eab4..0d0510d 100644
  #include "Chat.h"
  #include "Common.h"
  #include "DatabaseEnv.h"
-@@ -7416,6 +7417,9 @@ uint8 ObjectMgr::CheckPlayerName(const std::string& name, bool create)
+@@ -7394,6 +7395,9 @@ uint8 ObjectMgr::CheckPlayerName(const std::string& name, bool create)
          if (wname[i] == wname[i-1] && wname[i] == wname[i-2])
              return CHAR_NAME_THREE_CONSECUTIVE;
  
@@ -118,7 +140,7 @@ index 4d6eab4..0d0510d 100644
      return CHAR_NAME_SUCCESS;
  }
  
-@@ -7454,6 +7458,9 @@ PetNameInvalidReason ObjectMgr::CheckPetName(const std::string& name)
+@@ -7432,6 +7436,9 @@ PetNameInvalidReason ObjectMgr::CheckPetName(const std::string& name)
      if (!isValidString(wname, strictMask, false))
          return PET_NAME_MIXED_LANGUAGES;
  
@@ -132,7 +154,7 @@ index 4d6eab4..0d0510d 100644
  1 file changed, 32 insertions(+)
 
 diff --git a/src/server/game/Handlers/ChatHandler.cpp b/src/server/game/Handlers/ChatHandler.cpp
-index 4ebccc5..c7676c2 100644
+index 8570ad0..077fb19 100644
 --- a/src/server/game/Handlers/ChatHandler.cpp
 +++ b/src/server/game/Handlers/ChatHandler.cpp
 @@ -25,6 +25,7 @@
@@ -185,7 +207,7 @@ index 4ebccc5..c7676c2 100644
  1 file changed, 19 insertions(+)
 
 diff --git a/src/server/game/Handlers/MailHandler.cpp b/src/server/game/Handlers/MailHandler.cpp
-index 2bec62f..b3a64b3 100644
+index 27efe9d..817989d 100644
 --- a/src/server/game/Handlers/MailHandler.cpp
 +++ b/src/server/game/Handlers/MailHandler.cpp
 @@ -25,6 +25,8 @@
@@ -282,10 +304,10 @@ index 3b2a76a..dad15d9 100644
  1 file changed, 4 insertions(+)
 
 diff --git a/src/server/game/Miscellaneous/Language.h b/src/server/game/Miscellaneous/Language.h
-index 772d5bc..8052e64 100644
+index 327d7ed..be593eb 100644
 --- a/src/server/game/Miscellaneous/Language.h
 +++ b/src/server/game/Miscellaneous/Language.h
-@@ -1217,6 +1217,10 @@ enum TrinityStrings
+@@ -1215,6 +1215,10 @@ enum TrinityStrings
      LANG_AUTO_BROADCAST                 = 11000,
      LANG_INVALID_REALMID                = 11001,
  
@@ -613,7 +635,7 @@ index 0000000..0120af8
  1 file changed, 10 insertions(+)
 
 diff --git a/src/server/game/World/World.cpp b/src/server/game/World/World.cpp
-index 52ac2d2..d5b8e39 100644
+index 7ad7b68..1cdee71 100644
 --- a/src/server/game/World/World.cpp
 +++ b/src/server/game/World/World.cpp
 @@ -44,6 +44,7 @@
@@ -624,7 +646,7 @@ index 52ac2d2..d5b8e39 100644
  #include "Chat.h"
  #include "DBCStores.h"
  #include "LootMgr.h"
-@@ -946,6 +947,9 @@ void World::LoadConfigSettings(bool reload)
+@@ -947,6 +948,9 @@ void World::LoadConfigSettings(bool reload)
      m_int_configs[CONFIG_CHATFLOOD_MESSAGE_DELAY] = sConfigMgr->GetIntDefault("ChatFlood.MessageDelay", 1);
      m_int_configs[CONFIG_CHATFLOOD_MUTE_TIME]     = sConfigMgr->GetIntDefault("ChatFlood.MuteTime", 10);
  
@@ -634,7 +656,7 @@ index 52ac2d2..d5b8e39 100644
      m_bool_configs[CONFIG_EVENT_ANNOUNCE] = sConfigMgr->GetIntDefault("Event.Announce", false);
  
      m_float_configs[CONFIG_CREATURE_FAMILY_FLEE_ASSISTANCE_RADIUS] = sConfigMgr->GetFloatDefault("CreatureFamilyFleeAssistanceRadius", 30.0f);
-@@ -1343,6 +1347,12 @@ void World::SetInitialWorldSettings()
+@@ -1366,6 +1370,12 @@ void World::SetInitialWorldSettings()
      sObjectMgr->SetDBCLocaleIndex(GetDefaultDbcLocale());        // Get once for all the locale index of DBC language (console/broadcasts)
      TC_LOG_INFO(LOG_FILTER_SERVER_LOADING, ">> Localization strings loaded in %u ms", GetMSTimeDiffToNow(oldMSTime));
  
@@ -651,7 +673,7 @@ index 52ac2d2..d5b8e39 100644
  1 file changed, 2 insertions(+)
 
 diff --git a/src/server/game/World/World.h b/src/server/game/World/World.h
-index 12586ed..4c7fcb6 100644
+index 9435fa8..f37e8cb 100644
 --- a/src/server/game/World/World.h
 +++ b/src/server/game/World/World.h
 @@ -113,6 +113,7 @@ enum WorldBoolConfigs
@@ -662,7 +684,7 @@ index 12586ed..4c7fcb6 100644
      CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVP,
      CONFIG_DEATH_CORPSE_RECLAIM_DELAY_PVE,
      CONFIG_DEATH_BONES_WORLD,
-@@ -251,6 +252,7 @@ enum WorldIntConfigs
+@@ -252,6 +253,7 @@ enum WorldIntConfigs
      CONFIG_CHATFLOOD_MESSAGE_COUNT,
      CONFIG_CHATFLOOD_MESSAGE_DELAY,
      CONFIG_CHATFLOOD_MUTE_TIME,
@@ -670,11 +692,11 @@ index 12586ed..4c7fcb6 100644
      CONFIG_CREATURE_FAMILY_ASSISTANCE_DELAY,
      CONFIG_CREATURE_FAMILY_FLEE_DELAY,
      CONFIG_WORLD_BOSS_LEVEL_DIFF,
- src/server/scripts/Commands/cs_misc.cpp | 112 ++++++++++++++++++++++++++++++++
- 1 file changed, 112 insertions(+)
+ src/server/scripts/Commands/cs_misc.cpp | 114 +++++++++++++++++++++++++++++++-
+ 1 file changed, 113 insertions(+), 1 deletion(-)
 
 diff --git a/src/server/scripts/Commands/cs_misc.cpp b/src/server/scripts/Commands/cs_misc.cpp
-index 6c7e838..adb59ae 100644
+index 3d531ce..1a36f1a 100644
 --- a/src/server/scripts/Commands/cs_misc.cpp
 +++ b/src/server/scripts/Commands/cs_misc.cpp
 @@ -15,6 +15,7 @@
@@ -685,143 +707,145 @@ index 6c7e838..adb59ae 100644
  #include "Chat.h"
  #include "ScriptMgr.h"
  #include "AccountMgr.h"
-@@ -68,6 +69,19 @@ public:
-             { "money",              SEC_ADMINISTRATOR,      true,  &HandleSendMoneyCommand,             "", NULL },
-             { NULL,                 0,                      false, NULL,                                "", NULL }
-         };
-+        static ChatCommand badWordCommandTable[] =
-+        {
-+            { "add",                SEC_ADMINISTRATOR,      true,  &HandleBadWordAddCommand,            "", NULL },
-+            { "remove",             SEC_ADMINISTRATOR,      true,  &HandleBadWordRemoveCommand,         "", NULL },
-+            { "list",               SEC_ADMINISTRATOR,      true,  &HandleBadWordListCommand,           "", NULL },
-+            { NULL,                 0,                      false, NULL,                                "", NULL }
-+        };
-+        static ChatCommand wordFilterCommandTable[] =
-+        {
-+            { "badword",            SEC_ADMINISTRATOR,      true,  NULL,                                "", badWordCommandTable },
-+            { "mod",                SEC_ADMINISTRATOR,      true,  &HandleWordFilterModCommand,         "", NULL },
-+            { NULL,                 0,                      false, NULL,                                "", NULL }
-+        };
+@@ -44,6 +45,19 @@ public:
+ 
+     ChatCommand* GetCommands() const OVERRIDE
+     {
++         static ChatCommand badWordCommandTable[] =
++         {
++             { "add",             rbac::RBAC_PERM_COMMAND_WORDFILTER_BADWORD_ADD,     true, &HandleBadWordAddCommand,    "", NULL },
++             { "remove",          rbac::RBAC_PERM_COMMAND_WORDFILTER_BADWORD_REMOVE,  true, &HandleBadWordRemoveCommand, "", NULL },
++             { "list",            rbac::RBAC_PERM_COMMAND_WORDFILTER_BADWORD_LIST,    true, &HandleBadWordListCommand,   "", NULL },
++             { NULL,              0,                                                 false, NULL,                        "", NULL }
++         };
++         static ChatCommand wordFilterCommandTable[] =
++         {
++             { "badword",         rbac::RBAC_PERM_COMMAND_WORDFILTER_BADWORD,         true, NULL,                        "", badWordCommandTable },
++             { "mod",             rbac::RBAC_PERM_COMMAND_WORDFILTER_MOD,             true, &HandleWordFilterModCommand, "", NULL },
++             { NULL,              0,                                                 false, NULL,                        "", NULL }
++         };
          static ChatCommand commandTable[] =
          {
-             { "dev",                SEC_ADMINISTRATOR,      false, &HandleDevCommand,                   "", NULL },
-@@ -122,6 +136,7 @@ public:
-             { "bindsight",          SEC_ADMINISTRATOR,      false, HandleBindSightCommand,              "", NULL },
-             { "unbindsight",        SEC_ADMINISTRATOR,      false, HandleUnbindSightCommand,            "", NULL },
-             { "playall",            SEC_GAMEMASTER,         false, HandlePlayAllCommand,                "", NULL },
-+            { "wordfilter",         SEC_ADMINISTRATOR,      false, NULL,                                "", wordFilterCommandTable },
-             { NULL,                 0,                      false, NULL,                                "", NULL }
+             { "additem",          rbac::RBAC_PERM_COMMAND_ADDITEM,          false, &HandleAddItemCommand,          "", NULL },
+@@ -94,7 +108,8 @@ public:
+             { "unpossess",        rbac::RBAC_PERM_COMMAND_UNPOSSESS,        false, &HandleUnPossessCommand,        "", NULL },
+             { "unstuck",          rbac::RBAC_PERM_COMMAND_UNSTUCK,           true, &HandleUnstuckCommand,          "", NULL },
+             { "wchange",          rbac::RBAC_PERM_COMMAND_WCHANGE,          false, &HandleChangeWeather,           "", NULL },
+-            { NULL,               0,                                  false, NULL,                           "", NULL }
++            { "wordfilter",       rbac::RBAC_PERM_COMMAND_WORDFILTER,       false, NULL,                           "", wordFilterCommandTable },
++            { NULL,               0,                                        false, NULL,                           "", NULL }
          };
          return commandTable;
-@@ -2587,6 +2602,103 @@ public:
+     }
+@@ -2464,6 +2479,103 @@ public:
+         player->StopCastingBindSight();
          return true;
      }
- 
-+    static bool HandleBadWordAddCommand(ChatHandler* handler, char const* args)
-+    {
-+        std::string badWord = args;
++
++	static bool HandleBadWordAddCommand(ChatHandler* handler, char const* args)
++	{
++		std::string badWord = args;
 +
 +		const uint8 maxWordSize = 3;
-+        if (badWord.size() <= maxWordSize)
-+        {
-+            handler->PSendSysMessage("The word '%s' is incorrect! The word length must be greater than %u.", badWord.c_str(), maxWordSize);
-+            return false;
-+		 }
++		if (badWord.size() <= maxWordSize)
++		{
++			handler->PSendSysMessage("The word '%s' is incorrect! The word length must be greater than %u.", badWord.c_str(), maxWordSize);
++			return false;
++		}
 +
-+        if (!sWordFilterMgr->AddBadWord(badWord, true))
-+        {
-+            handler->PSendSysMessage("The word '%s' is exist!", badWord.c_str());
-+            return false;
-+		 }
++		if (!sWordFilterMgr->AddBadWord(badWord, true))
++		{
++			handler->PSendSysMessage("The word '%s' is exist!", badWord.c_str());
++			return false;
++		}
 +
-+        handler->PSendSysMessage("The word '%s' is added to 'bad_word'.", badWord.c_str());
-+        return true;
-+    }
-+
-+    static bool HandleBadWordRemoveCommand(ChatHandler* handler, char const* args)
-+    {
-+        std::string badWord = args;
-+
-+        if (!sWordFilterMgr->RemoveBadWord(args, true))
-+        {
-+            handler->PSendSysMessage("The word '%s' is not exist!", badWord.c_str());
-+            return false;
-+        }
-+
-+        handler->PSendSysMessage("The word '%s' is removed from 'bad_word'.", badWord.c_str());
-+        return true;
-+    }
-+
-+    static bool HandleBadWordListCommand(ChatHandler* handler, char const* args)
-+    {
-+        WordFilterMgr::BadWordMap const& badWords = sWordFilterMgr->GetBadWords();
-+		
-+        if (badWords.empty())
-+        {
-+            handler->PSendSysMessage("empty.");
-+            return true;
-+        }
-+
-+        std::string strBadWordList;
-+        uint16 addressesSize = 0;
-+        const uint16 maxAddressesSize = 255; // !uint8
-+
-+        for (WordFilterMgr::BadWordMap::const_iterator it = badWords.begin(); it != badWords.end(); ++it)
-+        {
-+            strBadWordList.append(it->second);
-+
-+            if ((*it) != (*badWords.rbegin()))
-+                strBadWordList.append(", ");
-+            else
-+                strBadWordList.append(".");
-+
-+            // send
-+            if (addressesSize >= maxAddressesSize || (*it) >= (*badWords.rbegin()))
-+            {
-+                handler->PSendSysMessage("Bad words: %s", strBadWordList.c_str());
-+                strBadWordList.clear();
-+                addressesSize = 0;
-+            }
-+
-+            addressesSize += it->second.size();
-+        }
-+
-+        return true;
++		handler->PSendSysMessage("The word '%s' is added to 'bad_word'.", badWord.c_str());
++		return true;
 +	}
 +
-+    static bool HandleWordFilterModCommand(ChatHandler* handler, char const* args)
-+    {
-+        std::string argstr = (char*)args;
-+        if (argstr == "on")
-+        {
-+            sWorld->setBoolConfig(CONFIG_WORD_FILTER_ENABLE, true);
-+            handler->PSendSysMessage("WordFilter: mod is enabled");
-+            return true;
-+        }
-+        if (argstr == "off")
-+        {
-+            sWorld->setBoolConfig(CONFIG_WORD_FILTER_ENABLE, false);
-+            handler->PSendSysMessage("WordFilter: mod is disabled");
-+            return true;
-+        }
++	static bool HandleBadWordRemoveCommand(ChatHandler* handler, char const* args)
++	{
++		std::string badWord = args;
 +
-+        std::string strModIs = sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) ? "enabled" : "disabled";
-+        handler->PSendSysMessage("WordFilter: mod is now %s.", strModIs.c_str());
++		if (!sWordFilterMgr->RemoveBadWord(args, true))
++		{
++			handler->PSendSysMessage("The word '%s' is not exist!", badWord.c_str());
++			return false;
++		}
 +
-+        handler->SendSysMessage(LANG_USE_BOL);
-+        handler->SetSentErrorMessage(true);
-+		
-+        return true;
-+    }
++		handler->PSendSysMessage("The word '%s' is removed from 'bad_word'.", badWord.c_str());
++		return true;
++	}
 +
-     static bool HandleCreatePetCommand(ChatHandler* handler, char const* /*args*/)
-     {
-         Player* player = handler->GetSession()->GetPlayer();
- src/server/scripts/Commands/cs_reload.cpp | 22 ++++++++++++++++++++++
- 1 file changed, 22 insertions(+)
++	static bool HandleBadWordListCommand(ChatHandler* handler, char const* args)
++	{
++		WordFilterMgr::BadWordMap const& badWords = sWordFilterMgr->GetBadWords();
++
++		if (badWords.empty())
++		{
++			handler->PSendSysMessage("empty.");
++			return true;
++		}
++
++		std::string strBadWordList;
++		uint16 addressesSize = 0;
++		const uint16 maxAddressesSize = 255; // !uint8
++
++		for (WordFilterMgr::BadWordMap::const_iterator it = badWords.begin(); it != badWords.end(); ++it)
++		{
++			strBadWordList.append(it->second);
++
++			if ((*it) != (*badWords.rbegin()))
++				strBadWordList.append(", ");
++			else
++				strBadWordList.append(".");
++
++			// send
++			if (addressesSize >= maxAddressesSize || (*it) >= (*badWords.rbegin()))
++			{
++				handler->PSendSysMessage("Bad words: %s", strBadWordList.c_str());
++				strBadWordList.clear();
++				addressesSize = 0;
++			}
++
++			addressesSize += it->second.size();
++		}
++
++		return true;
++	}
++
++	static bool HandleWordFilterModCommand(ChatHandler* handler, char const* args)
++	{
++		std::string argstr = (char*)args;
++		if (argstr == "on")
++		{
++			sWorld->setBoolConfig(CONFIG_WORD_FILTER_ENABLE, true);
++			handler->PSendSysMessage("WordFilter: mod is enabled");
++			return true;
++		}
++		if (argstr == "off")
++		{
++			sWorld->setBoolConfig(CONFIG_WORD_FILTER_ENABLE, false);
++			handler->PSendSysMessage("WordFilter: mod is disabled");
++			return true;
++		}
++
++		std::string strModIs = sWorld->getBoolConfig(CONFIG_WORD_FILTER_ENABLE) ? "enabled" : "disabled";
++		handler->PSendSysMessage("WordFilter: mod is now %s.", strModIs.c_str());
++
++		handler->SendSysMessage(LANG_USE_BOL);
++		handler->SetSentErrorMessage(true);
++
++		return true;
++	}
+ };
+ 
+ void AddSC_misc_commandscript()
+ src/server/scripts/Commands/cs_reload.cpp | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
 
 diff --git a/src/server/scripts/Commands/cs_reload.cpp b/src/server/scripts/Commands/cs_reload.cpp
-index 829152b..db33ec8 100644
+index fe0f3ee..07434d4 100644
 --- a/src/server/scripts/Commands/cs_reload.cpp
 +++ b/src/server/scripts/Commands/cs_reload.cpp
 @@ -41,6 +41,7 @@ EndScriptData */
@@ -832,23 +856,24 @@ index 829152b..db33ec8 100644
  
  class reload_commandscript : public CommandScript
  {
-@@ -76,6 +77,7 @@ public:
-             { "areatrigger_tavern",           SEC_ADMINISTRATOR, true,  &HandleReloadAreaTriggerTavernCommand,          "", NULL },
-             { "areatrigger_teleport",         SEC_ADMINISTRATOR, true,  &HandleReloadAreaTriggerTeleportCommand,        "", NULL },
-             { "autobroadcast",                SEC_ADMINISTRATOR, true,  &HandleReloadAutobroadcastCommand,              "", NULL },
-+            { "bad_word",                     SEC_ADMINISTRATOR, true,  &HandleReloadBadWordCommand,                    "", NULL },
-             { "command",                      SEC_ADMINISTRATOR, true,  &HandleReloadCommandCommand,                    "", NULL },
-             { "conditions",                   SEC_ADMINISTRATOR, true,  &HandleReloadConditions,                        "", NULL },
-             { "config",                       SEC_ADMINISTRATOR, true,  &HandleReloadConfigCommand,                     "", NULL },
-@@ -105,6 +107,7 @@ public:
-             { "item_enchantment_template",    SEC_ADMINISTRATOR, true,  &HandleReloadItemEnchantementsCommand,          "", NULL },
-             { "item_loot_template",           SEC_ADMINISTRATOR, true,  &HandleReloadLootTemplatesItemCommand,          "", NULL },
-             { "item_set_names",               SEC_ADMINISTRATOR, true,  &HandleReloadItemSetNamesCommand,               "", NULL },
-+            { "letter_analog",                SEC_ADMINISTRATOR, true,  &HandleReloadLetterAnalogCommand,               "", NULL },
-             { "lfg_dungeon_rewards",          SEC_ADMINISTRATOR, true,  &HandleReloadLfgRewardsCommand,                 "", NULL },
-             { "locales_achievement_reward",   SEC_ADMINISTRATOR, true,  &HandleReloadLocalesAchievementRewardCommand,   "", NULL },
-             { "locales_creature",             SEC_ADMINISTRATOR, true,  &HandleReloadLocalesCreatureCommand,            "", NULL },
-@@ -204,6 +207,9 @@ public:
+@@ -76,6 +77,8 @@ public:
+             { "areatrigger_tavern",            rbac::RBAC_PERM_COMMAND_RELOAD_AREATRIGGER_TAVERN, true,  &HandleReloadAreaTriggerTavernCommand,          "", NULL },
+             { "areatrigger_teleport",          rbac::RBAC_PERM_COMMAND_RELOAD_AREATRIGGER_TELEPORT, true,  &HandleReloadAreaTriggerTeleportCommand,        "", NULL },
+             { "autobroadcast",                 rbac::RBAC_PERM_COMMAND_RELOAD_AUTOBROADCAST, true,  &HandleReloadAutobroadcastCommand,              "", NULL },
++            { "bad_word",                      rbac::RBAC_PERM_COMMAND_RELOAD_BAD_WORD, true,  &HandleReloadBadWordCommand,                    "", NULL },
++
+             { "command",                       rbac::RBAC_PERM_COMMAND_RELOAD_COMMAND, true,  &HandleReloadCommandCommand,                    "", NULL },
+             { "conditions",                    rbac::RBAC_PERM_COMMAND_RELOAD_CONDITIONS, true,  &HandleReloadConditions,                        "", NULL },
+             { "config",                        rbac::RBAC_PERM_COMMAND_RELOAD_CONFIG, true,  &HandleReloadConfigCommand,                     "", NULL },
+@@ -105,6 +108,7 @@ public:
+             { "item_enchantment_template",     rbac::RBAC_PERM_COMMAND_RELOAD_ITEM_ENCHANTMENT_TEMPLATE, true,  &HandleReloadItemEnchantementsCommand,          "", NULL },
+             { "item_loot_template",            rbac::RBAC_PERM_COMMAND_RELOAD_ITEM_LOOT_TEMPLATE, true,  &HandleReloadLootTemplatesItemCommand,          "", NULL },
+             { "item_set_names",                rbac::RBAC_PERM_COMMAND_RELOAD_ITEM_SET_NAMES, true,  &HandleReloadItemSetNamesCommand,               "", NULL },
++            { "letter_analog",                 rbac::RBAC_PERM_COMMAND_RELOAD_LETTER_ANALOG, true,  &HandleReloadLetterAnalogCommand,               "", NULL },
+             { "lfg_dungeon_rewards",           rbac::RBAC_PERM_COMMAND_RELOAD_LFG_DUNGEON_REWARDS, true,  &HandleReloadLfgRewardsCommand,                 "", NULL },
+             { "locales_achievement_reward",    rbac::RBAC_PERM_COMMAND_RELOAD_LOCALES_ACHIEVEMENT_REWARD, true,  &HandleReloadLocalesAchievementRewardCommand,   "", NULL },
+             { "locales_creature",              rbac::RBAC_PERM_COMMAND_RELOAD_LOCALES_CRETURE, true,  &HandleReloadLocalesCreatureCommand,            "", NULL },
+@@ -204,6 +208,9 @@ public:
          HandleReloadVehicleTemplateAccessoryCommand(handler, "");
  
          HandleReloadAutobroadcastCommand(handler, "");
@@ -858,7 +883,7 @@ index 829152b..db33ec8 100644
          return true;
      }
  
-@@ -387,6 +393,14 @@ public:
+@@ -387,6 +394,14 @@ public:
          return true;
      }
  
@@ -873,7 +898,7 @@ index 829152b..db33ec8 100644
      static bool HandleReloadCommandCommand(ChatHandler* handler, const char* /*args*/)
      {
          handler->SetLoadCommandTable(true);
-@@ -961,6 +975,14 @@ public:
+@@ -961,6 +976,14 @@ public:
          return true;
      }
  
@@ -892,7 +917,7 @@ index 829152b..db33ec8 100644
  1 file changed, 23 insertions(+), 2 deletions(-)
 
 diff --git a/src/server/worldserver/worldserver.conf.dist b/src/server/worldserver/worldserver.conf.dist
-index c4e19e8..ddeb1d5 100644
+index 23db333..fa5dfc3 100644
 --- a/src/server/worldserver/worldserver.conf.dist
 +++ b/src/server/worldserver/worldserver.conf.dist
 @@ -15,6 +15,7 @@
@@ -903,7 +928,7 @@ index c4e19e8..ddeb1d5 100644
  #    GAME MASTER SETTINGS
  #    VISIBILITY AND DISTANCES
  #    SERVER RATES
-@@ -1444,7 +1445,7 @@ ListenRange.Yell = 300
+@@ -1451,7 +1452,7 @@ ListenRange.Yell = 300
  #        Default:     0 - (Disabled)
  #                     1 - (Enabled)
  
@@ -912,7 +937,7 @@ index c4e19e8..ddeb1d5 100644
  
  #
  #    ChatStrictLinkChecking.Severity
-@@ -1474,7 +1475,7 @@ ChatStrictLinkChecking.Kick = 0
+@@ -1481,7 +1482,7 @@ ChatStrictLinkChecking.Kick = 0
  #        Default:     10 - (Enabled)
  #                     0  - (Disabled)
  
@@ -921,7 +946,7 @@ index c4e19e8..ddeb1d5 100644
  
  #
  #    ChatFlood.MessageDelay
-@@ -1544,6 +1545,26 @@ PreserveCustomChannelDuration = 14
+@@ -1551,6 +1552,26 @@ PreserveCustomChannelDuration = 14
  ###################################################################################################
  
  ###################################################################################################
