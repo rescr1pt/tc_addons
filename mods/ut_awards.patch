@@ -2,194 +2,187 @@
 # Version: 0.8
 # https://github.com/rescr1pt/tc_addons
 
- sql/tc_addons/world_modifier_online_character.sql | 4 ++++
- 1 file changed, 4 insertions(+)
+ sql/tc_addons/ut_awards.sql | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
 
-diff --git a/sql/tc_addons/world_modifier_online_character.sql b/sql/tc_addons/world_modifier_online_character.sql
+diff --git a/sql/tc_addons/ut_awards.sql b/sql/tc_addons/ut_awards.sql
 new file mode 100644
-index 0000000..8719854
+index 0000000..a415e37
 --- /dev/null
-+++ b/sql/tc_addons/world_modifier_online_character.sql
-@@ -0,0 +1,4 @@
-+DELETE FROM `trinity_string` WHERE `entry` IN (11400, 11401);
-+REPLACE INTO `trinity_string` (`entry`, `content_default`, `content_loc1`, `content_loc2`, `content_loc3`, `content_loc4`, `content_loc5`, `content_loc6`, `content_loc7`, `content_loc8`) VALUES
-+  (11400, '|cffd3f4bcTime for rewards online players.|r', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '|cffd3f4bcВремя выдачи наград онлайн игрокам.|r'),
-+  (11401, 'You sent %u coins as a reward for visiting our world. Thank you for the world!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Вам было отправлено %u монет в качестве награды за посещение нашего мира. Спасибо, что с нами!');
- src/server/game/Miscellaneous/Language.h | 3 +++
- 1 file changed, 3 insertions(+)
++++ b/sql/tc_addons/ut_awards.sql
+@@ -0,0 +1,20 @@
++DELETE FROM trinity_string WHERE entry BETWEEN 20100 AND 20119;
++INSERT INTO trinity_string (entry, content_default, content_loc1, content_loc2, content_loc3, content_loc4, content_loc5, content_loc6, content_loc7, content_loc8) VALUES
++(20100, 'Double kill!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Двойное убийство!'),
++(20101, 'Triple kill!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Тройное убийство!'),
++(20102, 'Multi kill!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Мульти убийство!'),
++(20103, 'Mega kill!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Мега убийство!'),
++(20104, 'Ultra kill!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Ультра убийство!'),
++(20105, 'Monster kill!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Зверское убийство!'),
++(20106, 'Holy Shit!!!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Срань господня!!!'),
++
++(20110, '(%s) First blood!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Первая кровь!'),
++(20111, '(%s) Killing spree!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Произвёл серию убийств!'),
++
++(20112, '(%s) Dominating!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Доминирование!'),
++(20113, '(%s) Rampage!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Впал в ярость!'),
++(20114, '(%s) Unstoppable!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Неудержимый!'),
++(20115, '(%s) Godlike!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Божественный!'),
++(20116, '(%s) Beyond godlike!!!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Превзошёл богов!!!'),
++
++(20119, '(%s) Interrupted a series of kills (%s)!', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '(%s) Прервал серию убийств (%s)!');
+\ No newline at end of file
+ src/server/game/Battlegrounds/Battleground.cpp | 79 ++++++++++++++++++++++++++
+ 1 file changed, 79 insertions(+)
+
+diff --git a/src/server/game/Battlegrounds/Battleground.cpp b/src/server/game/Battlegrounds/Battleground.cpp
+index 211ab6c..050edaa 100644
+--- a/src/server/game/Battlegrounds/Battleground.cpp
++++ b/src/server/game/Battlegrounds/Battleground.cpp
+@@ -1802,6 +1802,16 @@ void Battleground::HandleKillPlayer(Player* victim, Player* killer)
+         if (killer == victim)
+             return;
+ 
++        // First blood 
++        for (BattlegroundScoreMap::const_iterator itr = PlayerScores.begin(); itr != PlayerScores.end(); ++itr)
++        {
++            if (itr->second->HonorableKills != 0)
++                break;
++
++            if ((*itr) == (*PlayerScores.rbegin()))
++                PSendMessageToAll(LANG_UTA_FIRST_BLOOD, CHAT_MSG_BG_SYSTEM_NEUTRAL, NULL, killer->GetName().c_str());
++        }
++
+         UpdatePlayerScore(killer, SCORE_HONORABLE_KILLS, 1);
+         UpdatePlayerScore(killer, SCORE_KILLING_BLOWS, 1);
+ 
+@@ -1822,6 +1832,75 @@ void Battleground::HandleKillPlayer(Player* victim, Player* killer)
+         victim->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
+         RewardXPAtKill(killer, victim);
+     }
++
++    /// UT Awards
++
++    if (!isBattleground())
++        return;
++
++    BattlegroundScoreMap::const_iterator killerIt = PlayerScores.find(killer->GetGUID());
++    BattlegroundScoreMap::const_iterator victimIt = PlayerScores.find(victim->GetGUID());
++
++    if (killerIt != PlayerScores.end() || victimIt != PlayerScores.end() || !killerIt->second || !victimIt->second)
++        return;
++
++    BattlegroundScore::KillStreakInfo& killerKillStreak = killerIt->second->KillStreak;
++    BattlegroundScore::KillStreakInfo& victimKillStreak = victimIt->second->KillStreak;
++
++    // Can freely to change it.
++    const uint8 IntervBetKills = 5;
++
++    // Interrupted a series of kills
++    if (victimKillStreak.Public >= IntervBetKills) 
++        PSendMessageToAll(LANG_UTA_INTERRUPTED_SERIES, CHAT_MSG_BG_SYSTEM_NEUTRAL, NULL, killer->GetName().c_str(), victim->GetName().c_str());
++
++    victimKillStreak.Private = 0;
++    victimKillStreak.Public = 0;
++    ++killerKillStreak.Private;
++    ++killerKillStreak.Public;
++
++    // Public award
++    uint16 divided = killerKillStreak.Public / IntervBetKills;
++    if (divided > 0 && (killerKillStreak.Public % IntervBetKills) == 0)
++    {
++        int32 publicAwardEntry = LANG_UTA_KILLING_SPREE + (divided - 1);
++        if (publicAwardEntry > LANG_UTA_BEYOND_GODLIKE)
++            publicAwardEntry = LANG_UTA_BEYOND_GODLIKE;
++ 
++        PSendMessageToAll(publicAwardEntry, CHAT_MSG_BG_SYSTEM_NEUTRAL, NULL, killer->GetName().c_str());
++    }
++
++    // Private award
++    const uint16 maxTimeIntervBetwKills = 5000;
++    if (killerKillStreak.Private >= 2)
++    {
++        if (GetMSTimeDiffToNow(killerKillStreak.LastKillTime) <= maxTimeIntervBetwKills)
++        {
++            int32 privateAwardEntry = LANG_UTA_DOUBLE_KILL + (killerKillStreak.Private - 2);
++            if (privateAwardEntry > LANG_UTA_HOLY_SHIT)
++                privateAwardEntry = LANG_UTA_HOLY_SHIT;
++
++            std::string message(killer->GetSession()->GetTrinityString(privateAwardEntry));
++   
++            // todo: packet builder
++            WorldPacket data(SMSG_MESSAGECHAT, 200);
++            data << (uint8)CHAT_MSG_RAID_BOSS_EMOTE;
++            data << (uint32)LANG_UNIVERSAL;
++            data << (uint64)0;
++            data << (uint32)0;  
++            data << (uint32)1;
++            data << (uint8)0;
++            data << (uint64)0;
++            data << (uint32)(message.length() + 1);
++            data << message.c_str();
++            data << (uint8)0;
++            killer->GetSession()->SendPacket(&data);
++        }
++        else
++            killerKillStreak.Private = 1;
++    }
++
++    killerKillStreak.LastKillTime = getMSTime();
+ }
+ 
+ // Return the player's team based on battlegroundplayer info
+ src/server/game/Battlegrounds/Battleground.h | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/server/game/Battlegrounds/Battleground.h b/src/server/game/Battlegrounds/Battleground.h
+index 76ff08e..0290cea 100644
+--- a/src/server/game/Battlegrounds/Battleground.h
++++ b/src/server/game/Battlegrounds/Battleground.h
+@@ -251,6 +251,15 @@ struct BattlegroundScore
+     uint32 BonusHonor;
+     uint32 DamageDone;
+     uint32 HealingDone;
++
++    struct KillStreakInfo
++    {
++        KillStreakInfo() : Private(0), Public(0), LastKillTime(0) {}
++
++        uint8 Private;
++        uint16 Public;
++        uint32 LastKillTime;
++    } KillStreak;
+ };
+ 
+ enum BGHonorMode
+ src/server/game/Miscellaneous/Language.h | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
 
 diff --git a/src/server/game/Miscellaneous/Language.h b/src/server/game/Miscellaneous/Language.h
-index 327d7ed..f86ffd6 100644
+index 327d7ed..ba3c7b0 100644
 --- a/src/server/game/Miscellaneous/Language.h
 +++ b/src/server/game/Miscellaneous/Language.h
-@@ -1215,6 +1215,9 @@ enum TrinityStrings
+@@ -1215,6 +1215,23 @@ enum TrinityStrings
      LANG_AUTO_BROADCAST                 = 11000,
      LANG_INVALID_REALMID                = 11001,
  
-+    LANG_MODIFIER_ONLINE_CHARACTERS_BROADCAST = 11400,
-+    LANG_MODIFIER_ONLINE_CHARACTERS_WHISPER   = 11401,
++         // UT Awards
++    LANG_UTA_DOUBLE_KILL                = 20100,
++    LANG_UTA_TRIPLE_KILL                = 20101,
++    LANG_UTA_MULTI_KILL                 = 20102,
++    LANG_UTA_MEGA_KILL                  = 20103,
++    LANG_UTA_ULTRA_KILL                 = 20104,
++    LANG_UTA_MONSTER_KILL               = 20105,
++    LANG_UTA_HOLY_SHIT                  = 20106,
++    LANG_UTA_FIRST_BLOOD                = 20110,
++    LANG_UTA_KILLING_SPREE              = 20111,
++    LANG_UTA_DOMINATION                 = 20112,
++    LANG_UTA_RAMPAGE                    = 20113,
++    LANG_UTA_UNSTOPPABLE                = 20114,
++    LANG_UTA_GODLIKE                    = 20115,
++    LANG_UTA_BEYOND_GODLIKE             = 20116,
++    LANG_UTA_INTERRUPTED_SERIES         = 20119,
 +
      // NOT RESERVED IDS                   12000-1999999999
      // `db_script_string` table index     2000000000-2000009999 (MIN_DB_SCRIPT_STRING_ID-MAX_DB_SCRIPT_STRING_ID)
      // For other tables maybe             2000010000-2147483647 (max index)
- src/server/game/World/World.cpp | 39 +++++++++++++++++++++++++++++++++++++++
- 1 file changed, 39 insertions(+)
-
-diff --git a/src/server/game/World/World.cpp b/src/server/game/World/World.cpp
-index 7ad7b68..e0915c7 100644
---- a/src/server/game/World/World.cpp
-+++ b/src/server/game/World/World.cpp
-@@ -1252,6 +1252,14 @@ void World::LoadConfigSettings(bool reload)
- 
-     m_int_configs[CONFIG_PACKET_SPOOF_BANDURATION] = sConfigMgr->GetIntDefault("PacketSpoof.BanDuration", 86400);
- 
-+
-+    // modifier online characters
-+    m_bool_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE] = sConfigMgr->GetBoolDefault("ModifierOnlineCharacters.Enable", true);
-+    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_TIMER] = (sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MinTimer", 60) * MINUTE * IN_MILLISECONDS);
-+    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER] = (sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MaxTimer", 180) * MINUTE * IN_MILLISECONDS);
-+    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY] = sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MinMoney", 100);
-+    m_int_configs[CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY] = sConfigMgr->GetIntDefault("ModifierOnlineCharacters.MaxMoney", 200);
-+ 	
-     // call ScriptMgr if we're reloading the configuration
-     if (reload)
-         sScriptMgr->OnConfigLoad(reload);
-@@ -1741,6 +1749,9 @@ void World::SetInitialWorldSettings()
- 
-     m_timers[WUPDATE_PINGDB].SetInterval(getIntConfig(CONFIG_DB_PING_INTERVAL)*MINUTE*IN_MILLISECONDS);    // Mysql ping time in minutes
- 
-+    uint32 mocInterval = urand(getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_TIMER), getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER));
-+    m_timers[WUPDATE_MODIFIER_ONLINE_CHARACTERS].SetInterval(mocInterval);
-+
-     //to set mailtimer to return mails every day between 4 and 5 am
-     //mailtimer is increased when updating auctions
-     //one second is 1000 -(tested on win system)
-@@ -2108,6 +2119,34 @@ void World::Update(uint32 diff)
-         WorldDatabase.KeepAlive();
-     }
- 
-+    if (m_timers[WUPDATE_MODIFIER_ONLINE_CHARACTERS].Passed())
-+    {
-+        m_timers[WUPDATE_MODIFIER_ONLINE_CHARACTERS].Reset();
-+
-+        if (getBoolConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE))
-+        {
-+            // Send separately because not all players sent.
-+            SendWorldText(LANG_MODIFIER_ONLINE_CHARACTERS_BROADCAST);
-+
-+            for (SessionMap::const_iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
-+            {
-+                if (!itr->second)
-+                    continue;
-+
-+                Player* player = itr->second->GetPlayer();
-+
-+                if (!player || !player->IsInWorld() || player->isAFK())
-+                    continue;
-+
-+                uint32 sendMoneyCount = urand(getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY), getIntConfig(CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY));
-+                sendMoneyCount = (sendMoneyCount * player->getLevel()) / 10;
-+
-+                player->ModifyMoney(sendMoneyCount);
-+                ChatHandler(itr->second).PSendSysMessage(LANG_MODIFIER_ONLINE_CHARACTERS_WHISPER, sendMoneyCount); 
-+            }
-+        }
-+    }
-+
-     // update the instance reset times
-     sInstanceSaveMgr->Update();
- 
- src/server/game/World/World.h | 6 ++++++
- 1 file changed, 6 insertions(+)
-
-diff --git a/src/server/game/World/World.h b/src/server/game/World/World.h
-index 9435fa8..f003dab 100644
---- a/src/server/game/World/World.h
-+++ b/src/server/game/World/World.h
-@@ -78,6 +78,7 @@ enum WorldTimers
-     WUPDATE_MAILBOXQUEUE,
-     WUPDATE_DELETECHARS,
-     WUPDATE_PINGDB,
-+    WUPDATE_MODIFIER_ONLINE_CHARACTERS,
-     WUPDATE_COUNT
- };
- 
-@@ -160,6 +161,7 @@ enum WorldBoolConfigs
-     CONFIG_UI_QUESTLEVELS_IN_DIALOGS,     // Should we add quest levels to the title in the NPC dialogs?
-     CONFIG_EVENT_ANNOUNCE,
-     CONFIG_STATS_LIMITS_ENABLE,
-+    CONFIG_MODIFIER_ONLINE_CHARACTERS_ENABLE,
-     CONFIG_INSTANCES_RESET_ANNOUNCE,
-     BOOL_CONFIG_VALUE_COUNT
- };
-@@ -327,6 +329,10 @@ enum WorldIntConfigs
-     CONFIG_WINTERGRASP_BATTLETIME,
-     CONFIG_WINTERGRASP_NOBATTLETIME,
-     CONFIG_WINTERGRASP_RESTART_AFTER_CRASH,
-+    CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_TIMER,
-+    CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_TIMER,
-+    CONFIG_MODIFIER_ONLINE_CHARACTERS_MIN_MONEY,
-+    CONFIG_MODIFIER_ONLINE_CHARACTERS_MAX_MONEY,
-     CONFIG_PACKET_SPOOF_POLICY,
-     CONFIG_PACKET_SPOOF_BANMODE,
-     CONFIG_PACKET_SPOOF_BANDURATION,
- src/server/worldserver/worldserver.conf.dist | 42 ++++++++++++++++++++++++++++
- 1 file changed, 42 insertions(+)
-
-diff --git a/src/server/worldserver/worldserver.conf.dist b/src/server/worldserver/worldserver.conf.dist
-index 23db333..605c50b 100644
---- a/src/server/worldserver/worldserver.conf.dist
-+++ b/src/server/worldserver/worldserver.conf.dist
-@@ -29,6 +29,7 @@
- #    CUSTOM SERVER OPTIONS
- #    LOGGING SYSTEM SETTINGS
- #    PACKET SPOOF PROTECTION SETTINGS
-+#    MODIFIER ONLINE CHARACTERS
- #
- ###################################################################################################
- 
-@@ -2858,3 +2859,44 @@ PacketSpoof.BanDuration = 86400
- 
- #
- ###################################################################################################
-+
-+###################################################################################################################
-+# MODIFIER ONLINE CHARACTERS
-+#
-+#    ModifierOnlineCharacters.Enable
-+#        Set Modifier Online Characters status.
-+#        Default: 1 - Enable
-+#                 0 - Disable
-+
-+ModifierOnlineCharacters.Enable = 1
-+
-+#    ModifierOnlineCharacters.MinTimer
-+#        Set min interval between sending characters
-+#        Default: 60 (1 hours)
-+
-+ModifierOnlineCharacters.MinTimer = 60
-+
-+#    ModifierOnlineCharacters.MinTimer
-+#        Set min interval between sending characters
-+#        Default: 180 (3 hours)
-+
-+ModifierOnlineCharacters.MaxTimer = 180
-+
-+#    ModifierOnlineCharacters.MinMoney
-+#        Set the min amount of money to add to the online players.(coper)
-+#        Will be sent with the calculation: (ModifierOnlineCharacters.MinMoney * Character Level) / 10
-+#
-+#        Default: 100
-+
-+ModifierOnlineCharacters.MinMoney = 100
-+
-+#    ModifierOnlineCharacters.MaxMoney
-+#        Set the max amount of money to add to the online players.(coper)
-+#        Will be sent with the calculation: (ModifierOnlineCharacters.MaxMoney * Character Level) / 10
-+#
-+#        Default: 200
-+
-+ModifierOnlineCharacters.MaxMoney = 200
-+
-+#
-+###################################################################################################################
